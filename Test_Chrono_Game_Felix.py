@@ -6,10 +6,12 @@ Modes:
   1️⃣  Single Player — normal mode
   2️⃣  Two Players   — alternating turns
 Type "EXIT" at any placement prompt to return to main menu.
+Option to show (clickable) links for the current challenge song only.
 """
 
 from __future__ import annotations
 import argparse
+import os
 import random
 import sys
 from dataclasses import dataclass
@@ -91,22 +93,49 @@ def render_timeline(timeline: List[Song]) -> None:
     print()
 
 
-def ask_position(timeline: List[Song], challenge: Song) -> Optional[int]:
+# ---------------- Link helpers ----------------
+def supports_ansi_hyperlinks() -> bool:
+    """Best-effort check if terminal likely supports OSC 8 hyperlinks."""
+    term = os.environ.get("TERM", "")
+    if sys.platform == "win32":
+        # Windows Terminal exposes WT_SESSION; VS Code uses VSCODE_IPC_HOOK.
+        return "WT_SESSION" in os.environ or "WindowsTerminal" in os.environ or "VSCODE_PID" in os.environ
+    return any(k in term for k in ("xterm", "screen", "tmux", "kitty"))
+
+def hyperlink(url: str, text: str) -> str:
+    """Return a clickable hyperlink if supported, else a plain 'text: url'."""
+    if supports_ansi_hyperlinks():
+        return f"\033]8;;{url}\033\\{text}\033]8;;\033\\"
+    return f"{text}: {url}"
+
+def show_link_for_challenge(song: Song):
+    """Show link only for the current challenge song."""
+    if song.track_url:
+        print(f"   🎧 {hyperlink(song.track_url, 'Listen here')}")
+    else:
+        print("   (No preview available)")
+
+
+# ---------------- Prompt / options ----------------
+def ask_position(timeline: List[Song], challenge: Song, show_links: bool) -> Optional[int]:
     """
     Inline options:
       Option 1 < (YYYY) < Option 2 < (YYYY) < ... < Option N
     Type "EXIT" to return to main menu.
     """
     tl = sorted(timeline, key=lambda x: x.year)
+
     print(f"Place this song:  \033[1m{challenge.label(False)}\033[0m")
+    if show_links:
+        show_link_for_challenge(challenge)
+
     print("Choose where this song's year fits (or type 'EXIT' to go back):")
 
-    parts = []
+    # Ensure a "<" between every token
+    tokens: List[str] = ["Option 1"]
     for i, s in enumerate(tl):
-        parts.append(f"Option {i+1}")
-        parts.append(f"< \033[1m({s.year})\033[0m")
-    parts.append(f"< Option {len(tl)+1}")
-    print("  " + " ".join(parts))
+        tokens += ["<", f"\033[1m({s.year})\033[0m", "<", f"Option {i+2}"]
+    print("  " + " ".join(tokens))
 
     while True:
         choice = input(f"Your choice (1..{len(tl)+1}, or EXIT): ").strip().lower()
@@ -125,16 +154,25 @@ def ask_position(timeline: List[Song], challenge: Song) -> Optional[int]:
 def hearts(n: int, max_hearts: int = MAX_LIVES) -> str:
     return "❤️" * n + "♡" * (max_hearts - n)
 
-
 def next_player_alive(current_idx: int, lives: List[int]) -> int:
     other = 1 - current_idx
-    if lives[other] > 0:
-        return other
-    return current_idx
+    return other if lives[other] > 0 else current_idx
+
+def ask_yes_no(prompt: str, default: bool = False) -> bool:
+    hint = " [Y/n]: " if default else " [y/N]: "
+    while True:
+        ans = input(prompt + hint).strip().lower()
+        if not ans:
+            return default
+        if ans in ("y", "yes"):
+            return True
+        if ans in ("n", "no"):
+            return False
+        print("Please answer y or n.")
 
 
 # ---------------- Single-player ----------------
-def play_single(all_songs: List[Song]) -> bool:
+def play_single(all_songs: List[Song], show_links: bool) -> bool:
     random.seed()
     starter = random.choice(all_songs)
     timeline = [starter]
@@ -155,7 +193,7 @@ def play_single(all_songs: List[Song]) -> bool:
             return True
 
         render_timeline(timeline)
-        idx = ask_position(timeline, cand)
+        idx = ask_position(timeline, cand, show_links)
         if idx is None:
             print("\n↩️ Returning to main menu...\n")
             return False
@@ -178,7 +216,7 @@ def play_single(all_songs: List[Song]) -> bool:
 
 
 # ---------------- Two-player ----------------
-def play_two(all_songs: List[Song], player_names: Tuple[str, str]) -> bool:
+def play_two(all_songs: List[Song], player_names: Tuple[str, str], show_links: bool) -> bool:
     random.seed()
     starter = random.choice(all_songs)
     timeline = [starter]
@@ -212,7 +250,7 @@ def play_two(all_songs: List[Song], player_names: Tuple[str, str]) -> bool:
         render_timeline(timeline)
         print(f"Turn: \033[1m{pnames[current]}\033[0m   "
               f"Lives: {hearts(lives[current])}   Score: {scores[current]}")
-        idx = ask_position(timeline, cand)
+        idx = ask_position(timeline, cand, show_links)
         if idx is None:
             print("\n↩️ Returning to main menu...\n")
             return False
@@ -254,21 +292,10 @@ def play_two(all_songs: List[Song], player_names: Tuple[str, str]) -> bool:
 
 
 # ---------------- Main ----------------
-def parse_players(arg: Optional[str]) -> Tuple[str, str]:
-    if not arg:
-        return ("Player 1", "Player 2")
-    parts = [p.strip() for p in arg.split(",") if p.strip()]
-    if len(parts) < 2:
-        parts.append("Player 2")
-    return (parts[0], parts[1])
-
-
 def main(argv: Optional[list[str]] = None) -> None:
     parser = argparse.ArgumentParser(description="Hitster-style chronology game (console).")
     parser.add_argument("data", nargs="?", default=DEFAULT_DATA_PATH,
                         help="Path to .xlsx/.csv dataset.")
-    parser.add_argument("--players", "-p", default=None,
-                        help='Comma-separated player names, e.g. --players "Alice,Bob"')
     args = parser.parse_args(argv)
 
     try:
@@ -286,15 +313,27 @@ def main(argv: Optional[list[str]] = None) -> None:
 
         if mode == "q":
             break
-        elif mode == "1":
-            cont = play_single(songs)
-            if not cont:
-                continue
-        elif mode == "2":
-            p1, p2 = parse_players(args.players)
-            cont = play_two(songs, (p1, p2))
-            if not cont:
-                continue
+        elif mode in ("1", "2"):
+            show_links = ask_yes_no("Show clickable song links?", default=True)
+
+            if mode == "1":
+                cont = play_single(songs, show_links)
+                if not cont:
+                    continue
+            else:
+                print("\nEnter both player names separated by a comma (e.g. Alice,Bob):")
+                names_input = input("Names: ").strip()
+                if not names_input:
+                    pnames = ("Player 1", "Player 2")
+                else:
+                    parts = [p.strip() for p in names_input.split(",") if p.strip()]
+                    if len(parts) < 2:
+                        parts.append("Player 2")
+                    pnames = (parts[0], parts[1])
+
+                cont = play_two(songs, pnames, show_links)
+                if not cont:
+                    continue
         else:
             print("Invalid choice, try again.")
 
