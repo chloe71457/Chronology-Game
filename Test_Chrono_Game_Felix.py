@@ -3,10 +3,14 @@
 Chronology (Hitster-style) console game.
 
 Modes:
-  1️⃣  Single Player — normal mode
-  2️⃣  Two Players   — alternating turns
+  1) Single Player
+  2) Two Players
+Pool:
+  a) Standard (all songs)
+  b) Popular only (track_popularity >= 75)
+
 Type "EXIT" at any placement prompt to return to main menu.
-Option to show (clickable) links for the current challenge song only.
+Shows clickable (or plain) links for each challenge song.
 """
 
 from __future__ import annotations
@@ -22,7 +26,7 @@ import pandas as pd
 DEFAULT_DATA_PATH = "songs_input.xlsx"
 MAX_LIVES = 3
 REQUIRED_COLS = ["track_id", "track_name", "track_artist", "year", "track_url"]
-
+OPTIONAL_COLS = ["track_popularity", "track_cover"]
 
 # ---------------- Data model ----------------
 @dataclass(frozen=True)
@@ -32,11 +36,12 @@ class Song:
     track_artist: str
     year: int
     track_url: str | None = None
+    popularity: Optional[int] = None
+    track_cover: Optional[str] = None
 
     def label(self, show_year: bool = False) -> str:
         base = f"{self.track_name} — {self.track_artist}"
         return f"{base} ({self.year})" if show_year else base
-
 
 # ---------------- Loading ----------------
 def load_songs(path: str) -> List[Song]:
@@ -50,27 +55,44 @@ def load_songs(path: str) -> List[Song]:
     df.columns = [c.lower() for c in df.columns]
     missing = [c for c in REQUIRED_COLS if c not in df.columns]
     if missing:
-        raise SystemExit(f"Dataset missing columns: {missing}")
+        raise SystemExit(f"Dataset missing columns: {missing}. Required: {REQUIRED_COLS}")
 
-    df = df[REQUIRED_COLS].copy()
+    keep_cols = REQUIRED_COLS + [c for c in OPTIONAL_COLS if c in df.columns]
+    df = df[keep_cols].copy()
+
     df["year"] = pd.to_numeric(df["year"], errors="coerce").astype("Int64")
+    if "track_popularity" in df.columns:
+        df["track_popularity"] = pd.to_numeric(df["track_popularity"], errors="coerce").astype("Int64")
+
     df = df.dropna(subset=["track_name", "track_artist", "year"])
     df["year"] = df["year"].astype(int)
     df = df.drop_duplicates(subset=["track_id", "year"]).reset_index(drop=True)
 
-    songs = [
-        Song(
-            track_id=row.track_id,
-            track_name=row.track_name,
-            track_artist=row.track_artist,
-            year=int(row.year),
-            track_url=(None if pd.isna(row.track_url) else str(row.track_url)),
+    songs: List[Song] = []
+    for row in df.itertuples(index=False):
+        songs.append(
+            Song(
+                track_id=getattr(row, "track_id"),
+                track_name=getattr(row, "track_name"),
+                track_artist=getattr(row, "track_artist"),
+                year=int(getattr(row, "year")),
+                track_url=None if "track_url" not in df.columns or pd.isna(getattr(row, "track_url", None))
+                else str(getattr(row, "track_url")),
+                popularity=None if "track_popularity" not in df.columns
+                                  or pd.isna(getattr(row, "track_popularity", None))
+                else int(getattr(row, "track_popularity")),
+                track_cover=None if "track_cover" not in df.columns or pd.isna(getattr(row, "track_cover", None))
+                else str(getattr(row, "track_cover")),
+            )
         )
-        for row in df.itertuples(index=False)
-    ]
     if not songs:
         raise SystemExit("No valid songs found.")
     return songs
+
+
+def filter_popular(songs: List[Song], threshold: int = 75) -> List[Song]:
+    """Return only songs with track_popularity >= threshold (if present)."""
+    return [s for s in songs if s.popularity is not None and s.popularity >= threshold]
 
 
 # ---------------- Game mechanics ----------------
@@ -87,94 +109,123 @@ def is_correct_insertion(timeline: List[Song], new_song: Song, insert_idx: int) 
 
 
 def render_timeline(timeline: List[Song]) -> None:
-    print("\nCurrent timeline:")
+    print("-" * 64)
+    print("🕓 Current timeline:")
     for i, s in enumerate(sorted(timeline, key=lambda x: x.year), start=1):
         print(f"  {i}. {s.label(show_year=True)}")
-    print()
-
+    print("-" * 64 + "\n")
 
 # ---------------- Link helpers ----------------
 def supports_ansi_hyperlinks() -> bool:
-    """Best-effort check if terminal likely supports OSC 8 hyperlinks."""
     term = os.environ.get("TERM", "")
     if sys.platform == "win32":
-        # Windows Terminal exposes WT_SESSION; VS Code uses VSCODE_IPC_HOOK.
-        return "WT_SESSION" in os.environ or "WindowsTerminal" in os.environ or "VSCODE_PID" in os.environ
+        return any(k in os.environ for k in ("WT_SESSION", "WindowsTerminal", "VSCODE_PID"))
     return any(k in term for k in ("xterm", "screen", "tmux", "kitty"))
 
+
 def hyperlink(url: str, text: str) -> str:
-    """Return a clickable hyperlink if supported, else a plain 'text: url'."""
+    """Clickable link if supported, else full raw URL (works everywhere)."""
     if supports_ansi_hyperlinks():
         return f"\033]8;;{url}\033\\{text}\033]8;;\033\\"
     return f"{text}: {url}"
 
-def show_link_for_challenge(song: Song):
-    """Show link only for the current challenge song."""
-    if song.track_url:
-        print(f"   🎧 {hyperlink(song.track_url, 'Listen here')}")
-    else:
-        print("   (No preview available)")
 
+def show_link_for_challenge(song: Song):
+    if song.track_url:
+        print(f"   🎧 {hyperlink(song.track_url, 'Listen here')}\n")
+    else:
+        print("   (No preview available)\n")
 
 # ---------------- Prompt / options ----------------
-def ask_position(timeline: List[Song], challenge: Song, show_links: bool) -> Optional[int]:
+def ask_position(timeline: List[Song], challenge: Song) -> Optional[int]:
     """
-    Inline options:
-      Option 1 < (YYYY) < Option 2 < (YYYY) < ... < Option N
-    Type "EXIT" to return to main menu.
+    Show only feasible insertion slots.
+    - 'Between' slots are shown only if there's an actual gap (>1 year) between adjacent items.
+    - Keeps one-line layout: Option 1 < (Y1) < Option 2 < (Y2) < ... < Option K
+    - Type 'EXIT' to return to main menu.
     """
     tl = sorted(timeline, key=lambda x: x.year)
 
-    print(f"Place this song:  \033[1m{challenge.label(False)}\033[0m")
-    if show_links:
-        show_link_for_challenge(challenge)
+    print(f"🎶 Place this song:  \033[1m{challenge.label(False)}\033[0m\n")
+    show_link_for_challenge(challenge)
+    print("Choose where this song's year fits (or type 'EXIT' to go back):\n")
 
-    print("Choose where this song's year fits (or type 'EXIT' to go back):")
+    # Build allowed insert positions (indices into a sorted-by-year list)
+    # Always allow: before first (0) and after last (len(tl)).
+    allowed_positions: List[int] = [0]
+    for i in range(len(tl) - 1):
+        left, right = tl[i], tl[i + 1]
+        if right.year - left.year > 1:
+            allowed_positions.append(i + 1)  # a real gap exists
+    allowed_positions.append(len(tl))
 
-    # Ensure a "<" between every token
-    tokens: List[str] = ["Option 1"]
+    # Render the one-line options with years in between
+    tokens: List[str] = []
+    opt_num = 1
+    tokens.append(f"Option {opt_num}")  # before first
     for i, s in enumerate(tl):
-        tokens += ["<", f"\033[1m({s.year})\033[0m", "<", f"Option {i+2}"]
-    print("  " + " ".join(tokens))
+        tokens += ["<", f"\033[1m({s.year})\033[0m"]
+        # If there's a valid gap after this year, show another option here
+        if i < len(tl) - 1 and (tl[i + 1].year - s.year > 1):
+            opt_num += 1
+            tokens += ["<", f"Option {opt_num}"]
+    # Always show the trailing option after the last year
+    opt_num += 1
+    tokens += ["<", f"Option {opt_num}"]
 
+    print("  " + " ".join(tokens) + "\n")
+
+    # Map user's choice number -> actual insert_idx from allowed_positions
     while True:
-        choice = input(f"Your choice (1..{len(tl)+1}, or EXIT): ").strip().lower()
+        choice = input(f"Your choice (1..{len(allowed_positions)}, or EXIT): ").strip().lower()
         if choice == "exit":
             return None
         try:
             val = int(choice)
-            if 1 <= val <= len(tl) + 1:
-                return val - 1
+            if 1 <= val <= len(allowed_positions):
+                return allowed_positions[val - 1]
         except ValueError:
             pass
-        print("Invalid input. Try again.")
-
+        print("Invalid input. Try again.\n")
 
 # ---------------- Helpers ----------------
 def hearts(n: int, max_hearts: int = MAX_LIVES) -> str:
     return "❤️" * n + "♡" * (max_hearts - n)
 
+
 def next_player_alive(current_idx: int, lives: List[int]) -> int:
     other = 1 - current_idx
     return other if lives[other] > 0 else current_idx
 
-def ask_yes_no(prompt: str, default: bool = False) -> bool:
-    hint = " [Y/n]: " if default else " [y/N]: "
+
+def choose_pool(all_songs: List[Song]) -> List[Song]:
+    has_popular_data = any(s.popularity is not None for s in all_songs)
+
+    print("\n🎵 Choose song pool:")
+    print("  (1) Standard — all songs")
+    if has_popular_data:
+        print("  (2) Popular only — track_popularity ≥ 75")
+    else:
+        print("  (2) Popular only — [unavailable: no popularity data]")
+
     while True:
-        ans = input(prompt + hint).strip().lower()
-        if not ans:
-            return default
-        if ans in ("y", "yes"):
-            return True
-        if ans in ("n", "no"):
-            return False
-        print("Please answer y or n.")
+        sel = input("Your choice: ").strip()
+        if sel == "1":
+            return all_songs
+        if sel == "2" and has_popular_data:
+            popular = filter_popular(all_songs, 75)
+            if not popular:
+                print("No songs meet ≥75 popularity. Using Standard pool.\n")
+                return all_songs
+            print(f"\n🎧 Using Popular pool: {len(popular)} songs.\n")
+            return popular
+        print("Enter 1 or 2.\n")
 
 
 # ---------------- Single-player ----------------
-def play_single(all_songs: List[Song], show_links: bool) -> bool:
+def play_single(song_pool: List[Song]) -> bool:
     random.seed()
-    starter = random.choice(all_songs)
+    starter = random.choice(song_pool)
     timeline = [starter]
     used_ids, used_years = {starter.track_id}, {starter.year}
     lives, score = MAX_LIVES, 0
@@ -182,28 +233,33 @@ def play_single(all_songs: List[Song], show_links: bool) -> bool:
     print("\n" + "=" * 64)
     print("🎵  Chronology — Single Player")
     print("=" * 64)
-    print(f"Starter: {starter.label(True)}")
-    print(f"Lives: {hearts(lives)}   Score: {score}")
+    print(f"Starter: {starter.label(True)}\n")
+    print(f"Lives: {hearts(lives)}   Score: {score}\n")
 
     while True:
-        cand = choose_next_song(all_songs, used_ids, used_years)
+        cand = choose_next_song(song_pool, used_ids, used_years)
         if cand is None:
             print("\nNo more valid songs — you cleared the deck! 🎉")
             print(f"Final score: {score}\n")
             return True
 
         render_timeline(timeline)
-        idx = ask_position(timeline, cand, show_links)
+        idx = ask_position(timeline, cand)
         if idx is None:
             print("\n↩️ Returning to main menu...\n")
             return False
 
         if is_correct_insertion(timeline, cand, idx):
             score += 1
-            print(f"\033[92m✅ Correct!\033[0m Year: {cand.year}")
+            print("-" * 64)
+            print(f"\033[92m✅ Correct!\033[0m   Year: {cand.year}")
+            print("-" * 64 + "\n")
         else:
             lives -= 1
-            print(f"\033[91m❌ Wrong.\033[0m '{cand.track_name}' was {cand.year}.  Lives: {hearts(lives)}")
+            print("-" * 64)
+            print(f"\033[91m❌ Wrong!\033[0m   '{cand.track_name}' was {cand.year}")
+            print(f"Remaining lives: {hearts(lives)}")
+            print("-" * 64 + "\n")
 
         timeline = sorted(timeline + [cand], key=lambda s: s.year)
         used_ids.add(cand.track_id)
@@ -216,9 +272,9 @@ def play_single(all_songs: List[Song], show_links: bool) -> bool:
 
 
 # ---------------- Two-player ----------------
-def play_two(all_songs: List[Song], player_names: Tuple[str, str], show_links: bool) -> bool:
+def play_two(song_pool: List[Song], player_names: Tuple[str, str]) -> bool:
     random.seed()
-    starter = random.choice(all_songs)
+    starter = random.choice(song_pool)
     timeline = [starter]
     used_ids, used_years = {starter.track_id}, {starter.year}
 
@@ -230,41 +286,42 @@ def play_two(all_songs: List[Song], player_names: Tuple[str, str], show_links: b
     print("\n" + "=" * 64)
     print("🎵  Chronology — Two Players")
     print("=" * 64)
-    print(f"Starter: {starter.label(True)}")
+    print(f"Starter: {starter.label(True)}\n")
     print(f"{pnames[0]}  Lives: {hearts(lives[0])}   Score: {scores[0]}")
-    print(f"{pnames[1]}  Lives: {hearts(lives[1])}   Score: {scores[1]}")
+    print(f"{pnames[1]}  Lives: {hearts(lives[1])}   Score: {scores[1]}\n")
 
     while True:
-        cand = choose_next_song(all_songs, used_ids, used_years)
+        cand = choose_next_song(song_pool, used_ids, used_years)
         if cand is None:
             print("\nNo more songs — you cleared the deck! 🎉")
             break
 
         if lives[current] <= 0:
             current = next_player_alive(current, lives)
-
         if lives[0] <= 0 and lives[1] <= 0:
             print("\n💥 Both players are out.")
             break
 
         render_timeline(timeline)
-        print(f"Turn: \033[1m{pnames[current]}\033[0m   "
-              f"Lives: {hearts(lives[current])}   Score: {scores[current]}")
-        idx = ask_position(timeline, cand, show_links)
+        print(f"Turn: \033[1m{pnames[current]}\033[0m   Lives: {hearts(lives[current])}   Score: {scores[current]}\n")
+        idx = ask_position(timeline, cand)
         if idx is None:
             print("\n↩️ Returning to main menu...\n")
             return False
 
         if is_correct_insertion(timeline, cand, idx):
             scores[current] += 1
-            print(f"\033[92m✅ Correct, {pnames[current]}!\033[0m Year: {cand.year}   "
-                  f"(Score now {scores[current]})")
+            print("-" * 64)
+            print(f"\033[92m✅ Correct, {pnames[current]}!\033[0m   Year: {cand.year}")
+            print("-" * 64 + "\n")
         else:
             lives[current] -= 1
-            print(f"\033[91m❌ Wrong, {pnames[current]}.\033[0m "
-                  f"'{cand.track_name}' was {cand.year}.  Lives: {hearts(lives[current])}")
+            print("-" * 64)
+            print(f"\033[91m❌ Wrong, {pnames[current]}!\033[0m   '{cand.track_name}' was {cand.year}")
+            print(f"Remaining lives: {hearts(lives[current])}")
+            print("-" * 64 + "\n")
             if lives[current] == 0:
-                print(f"🪦 {pnames[current]} has been eliminated!")
+                print(f"🪦 {pnames[current]} has been eliminated!\n")
 
         timeline = sorted(timeline + [cand], key=lambda s: s.year)
         used_ids.add(cand.track_id)
@@ -299,7 +356,7 @@ def main(argv: Optional[list[str]] = None) -> None:
     args = parser.parse_args(argv)
 
     try:
-        songs = load_songs(args.data)
+        all_songs = load_songs(args.data)
     except Exception as e:
         print(f"Error loading data: {e}")
         sys.exit(1)
@@ -314,10 +371,10 @@ def main(argv: Optional[list[str]] = None) -> None:
         if mode == "q":
             break
         elif mode in ("1", "2"):
-            show_links = ask_yes_no("Show clickable song links?", default=True)
+            pool = choose_pool(all_songs)
 
             if mode == "1":
-                cont = play_single(songs, show_links)
+                cont = play_single(pool)
                 if not cont:
                     continue
             else:
@@ -330,12 +387,11 @@ def main(argv: Optional[list[str]] = None) -> None:
                     if len(parts) < 2:
                         parts.append("Player 2")
                     pnames = (parts[0], parts[1])
-
-                cont = play_two(songs, pnames, show_links)
+                cont = play_two(pool, pnames)
                 if not cont:
                     continue
         else:
-            print("Invalid choice, try again.")
+            print("Invalid choice, try again.\n")
 
     print("\n👋 Thanks for playing!")
     sys.exit(0)
