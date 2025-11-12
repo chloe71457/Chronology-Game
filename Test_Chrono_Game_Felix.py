@@ -322,9 +322,11 @@ else:
     st.caption("We’ll wire gameplay here using your backend functions next.")
     st.button("⬅ Back to Home", key="back_next", on_click=lambda: go("home"))
 
+
+# ---------------- BACKEND ---------------
+
 # ---------------- Config ----------------
 DEFAULT_DATA_PATH = "songs_input.xlsx"
-MAX_LIVES = 3
 REQUIRED_COLS = ["track_id", "track_name", "track_artist", "year", "track_url"]
 OPTIONAL_COLS = ["track_popularity", "track_cover"]
 
@@ -394,7 +396,6 @@ def filter_popular(songs: List[Song], threshold: int = 75) -> List[Song]:
     """Return only songs with track_popularity >= threshold (if present)."""
     return [s for s in songs if s.popularity is not None and s.popularity >= threshold]
 
-
 # ---------------- Game mechanics ----------------
 def choose_next_song(pool: List[Song], used_ids: Set, used_years: Set[int]) -> Optional[Song]:
     candidates = [s for s in pool if s.track_id not in used_ids and s.year not in used_years]
@@ -438,44 +439,30 @@ def show_link_for_challenge(song: Song):
 
 # ---------------- Prompt / options ----------------
 def ask_position(timeline: List[Song], challenge: Song) -> Optional[int]:
-    """
-    Show only feasible insertion slots.
-    - 'Between' slots are shown only if there's an actual gap (>1 year) between adjacent items.
-    - Keeps one-line layout: Option 1 < (Y1) < Option 2 < (Y2) < ... < Option K
-    - Type 'EXIT' to return to main menu.
-    """
     tl = sorted(timeline, key=lambda x: x.year)
-
     print(f"🎶 Place this song:  \033[1m{challenge.label(False)}\033[0m\n")
     show_link_for_challenge(challenge)
     print("Choose where this song's year fits (or type 'EXIT' to go back):\n")
 
-    # Build allowed insert positions (indices into a sorted-by-year list)
-    # Always allow: before first (0) and after last (len(tl)).
     allowed_positions: List[int] = [0]
     for i in range(len(tl) - 1):
-        left, right = tl[i], tl[i + 1]
-        if right.year - left.year > 1:
-            allowed_positions.append(i + 1)  # a real gap exists
+        if tl[i + 1].year - tl[i].year > 1:
+            allowed_positions.append(i + 1)
     allowed_positions.append(len(tl))
 
-    # Render the one-line options with years in between
     tokens: List[str] = []
     opt_num = 1
-    tokens.append(f"Option {opt_num}")  # before first
+    tokens.append(f"Option {opt_num}")
     for i, s in enumerate(tl):
         tokens += ["<", f"\033[1m({s.year})\033[0m"]
-        # If there's a valid gap after this year, show another option here
         if i < len(tl) - 1 and (tl[i + 1].year - s.year > 1):
             opt_num += 1
             tokens += ["<", f"Option {opt_num}"]
-    # Always show the trailing option after the last year
     opt_num += 1
     tokens += ["<", f"Option {opt_num}"]
 
     print("  " + " ".join(tokens) + "\n")
 
-    # Map user's choice number -> actual insert_idx from allowed_positions
     while True:
         choice = input(f"Your choice (1..{len(allowed_positions)}, or EXIT): ").strip().lower()
         if choice == "exit":
@@ -489,13 +476,45 @@ def ask_position(timeline: List[Song], challenge: Song) -> Optional[int]:
         print("Invalid input. Try again.\n")
 
 # ---------------- Helpers ----------------
-def hearts(n: int, max_hearts: int = MAX_LIVES) -> str:
-    return "❤️" * n + "♡" * (max_hearts - n)
+def hearts(n: int, max_hearts: int) -> str:
+    return "❤️" * max(0, n) + "♡" * max(0, (max_hearts - n))
 
 
-def next_player_alive(current_idx: int, lives: List[int]) -> int:
-    other = 1 - current_idx
-    return other if lives[other] > 0 else current_idx
+def get_int_in_range(prompt: str, lo: int, hi: int) -> int:
+    while True:
+        s = input(f"{prompt} ({lo}-{hi}): ").strip()
+        try:
+            n = int(s)
+            if lo <= n <= hi:
+                return n
+        except ValueError:
+            pass
+        print(f"Please enter a number between {lo} and {hi}.\n")
+
+
+def get_player_count() -> int:
+    return get_int_in_range("How many players", 1, 4)
+
+
+def get_player_names(n: int) -> Tuple[str, ...]:
+    print(f"\nEnter {n} player name(s) separated by commas (e.g. Alice,Bob,…).")
+    raw = input("Names: ").strip()
+    names = [p.strip() for p in raw.split(",")] if raw else []
+    names = [name if name else f"Player {i+1}" for i, name in enumerate(names[:n])]
+    while len(names) < n:
+        names.append(f"Player {len(names)+1}")
+    return tuple(names)
+
+
+def next_alive_from(current_idx: int, lives: List[int]) -> Optional[int]:
+    if not lives or sum(1 for v in lives if v > 0) == 0:
+        return None
+    n = len(lives)
+    for step in range(1, n + 1):
+        j = (current_idx + step) % n
+        if lives[j] > 0:
+            return j
+    return None
 
 
 def choose_pool(all_songs: List[Song]) -> List[Song]:
@@ -522,19 +541,35 @@ def choose_pool(all_songs: List[Song]) -> List[Song]:
         print("Enter 1 or 2.\n")
 
 
+def choose_lives_preset() -> int:
+    """Return the max lives per player based on preset selection."""
+    print("\nSelect Lives:")
+    print("  (1) Standard — 3 lives")
+    print("  (2) Hardcore — 1 life")
+    print("  (3) Fun — 5 lives")
+    while True:
+        sel = input("Your choice: ").strip()
+        if sel == "1":
+            return 3
+        if sel == "2":
+            return 1
+        if sel == "3":
+            return 5
+        print("Enter 1, 2, or 3.\n")
+
 # ---------------- Single-player ----------------
-def play_single(song_pool: List[Song]) -> bool:
+def play_single(song_pool: List[Song], max_lives: int) -> bool:
     random.seed()
     starter = random.choice(song_pool)
     timeline = [starter]
     used_ids, used_years = {starter.track_id}, {starter.year}
-    lives, score = MAX_LIVES, 0
+    lives, score = max_lives, 0
 
     print("\n" + "=" * 64)
     print("🎵  Chronology — Single Player")
     print("=" * 64)
     print(f"Starter: {starter.label(True)}\n")
-    print(f"Lives: {hearts(lives)}   Score: {score}\n")
+    print(f"Lives: {hearts(lives, max_lives)}   Score: {score}\n")
 
     while True:
         cand = choose_next_song(song_pool, used_ids, used_years)
@@ -551,15 +586,11 @@ def play_single(song_pool: List[Song]) -> bool:
 
         if is_correct_insertion(timeline, cand, idx):
             score += 1
-            print("-" * 64)
-            print(f"\033[92m✅ Correct!\033[0m   Year: {cand.year}")
-            print("-" * 64 + "\n")
+            print(f"\033[92m✅ Correct!\033[0m   Year: {cand.year}\n")
         else:
             lives -= 1
-            print("-" * 64)
             print(f"\033[91m❌ Wrong!\033[0m   '{cand.track_name}' was {cand.year}")
-            print(f"Remaining lives: {hearts(lives)}")
-            print("-" * 64 + "\n")
+            print(f"Remaining lives: {hearts(lives, max_lives)}\n")
 
         timeline = sorted(timeline + [cand], key=lambda s: s.year)
         used_ids.add(cand.track_id)
@@ -570,40 +601,46 @@ def play_single(song_pool: List[Song]) -> bool:
             print(f"Final score: {score}\n")
             return True
 
-
-# ---------------- Two-player ----------------
-def play_two(song_pool: List[Song], player_names: Tuple[str, str]) -> bool:
+# ---------------- Multiplayer (1–4) ----------------
+def play_multi(song_pool: List[Song], player_names: Tuple[str, ...], max_lives: int) -> bool:
     random.seed()
     starter = random.choice(song_pool)
     timeline = [starter]
     used_ids, used_years = {starter.track_id}, {starter.year}
 
-    pnames = [player_names[0], player_names[1]]
-    lives = [MAX_LIVES, MAX_LIVES]
-    scores = [0, 0]
+    pnames = list(player_names)
+    P = len(pnames)
+    lives = [max_lives for _ in range(P)]
+    scores = [0 for _ in range(P)]
     current = 0
 
     print("\n" + "=" * 64)
-    print("🎵  Chronology — Two Players")
+    print(f"🎵  Chronology — {P} Player{'s' if P!=1 else ''}")
     print("=" * 64)
     print(f"Starter: {starter.label(True)}\n")
-    print(f"{pnames[0]}  Lives: {hearts(lives[0])}   Score: {scores[0]}")
-    print(f"{pnames[1]}  Lives: {hearts(lives[1])}   Score: {scores[1]}\n")
+    for i in range(P):
+        print(f"{pnames[i]}  Lives: {hearts(lives[i], max_lives)}   Score: {scores[i]}")
+    print()
 
     while True:
+        if sum(1 for v in lives if v > 0) == 0:
+            print("\n💥 All players are out.")
+            break
+
+        if lives[current] <= 0:
+            nxt = next_alive_from(current, lives)
+            if nxt is None:
+                print("\n💥 All players are out.")
+                break
+            current = nxt
+
         cand = choose_next_song(song_pool, used_ids, used_years)
         if cand is None:
             print("\nNo more songs — you cleared the deck! 🎉")
             break
 
-        if lives[current] <= 0:
-            current = next_player_alive(current, lives)
-        if lives[0] <= 0 and lives[1] <= 0:
-            print("\n💥 Both players are out.")
-            break
-
         render_timeline(timeline)
-        print(f"Turn: \033[1m{pnames[current]}\033[0m   Lives: {hearts(lives[current])}   Score: {scores[current]}\n")
+        print(f"Turn: \033[1m{pnames[current]}\033[0m   Lives: {hearts(lives[current], max_lives)}   Score: {scores[current]}\n")
         idx = ask_position(timeline, cand)
         if idx is None:
             print("\n↩️ Returning to main menu...\n")
@@ -611,15 +648,11 @@ def play_two(song_pool: List[Song], player_names: Tuple[str, str]) -> bool:
 
         if is_correct_insertion(timeline, cand, idx):
             scores[current] += 1
-            print("-" * 64)
-            print(f"\033[92m✅ Correct, {pnames[current]}!\033[0m   Year: {cand.year}")
-            print("-" * 64 + "\n")
+            print(f"\033[92m✅ Correct, {pnames[current]}!\033[0m   Year: {cand.year}\n")
         else:
             lives[current] -= 1
-            print("-" * 64)
             print(f"\033[91m❌ Wrong, {pnames[current]}!\033[0m   '{cand.track_name}' was {cand.year}")
-            print(f"Remaining lives: {hearts(lives[current])}")
-            print("-" * 64 + "\n")
+            print(f"Remaining lives: {hearts(lives[current], max_lives)}\n")
             if lives[current] == 0:
                 print(f"🪦 {pnames[current]} has been eliminated!\n")
 
@@ -627,26 +660,24 @@ def play_two(song_pool: List[Song], player_names: Tuple[str, str]) -> bool:
         used_ids.add(cand.track_id)
         used_years.add(cand.year)
 
-        if lives[0] <= 0 and lives[1] <= 0:
-            print("\n💥 Both players are out.")
+        nxt = next_alive_from(current, lives)
+        if nxt is None:
+            print("\n💥 All players are out.")
             break
-
-        current = next_player_alive(current, lives)
+        current = nxt
 
     print("\nFinal scores:")
-    print(f"  {pnames[0]} — Score: {scores[0]}   Lives: {hearts(lives[0])}")
-    print(f"  {pnames[1]} — Score: {scores[1]}   Lives: {hearts(lives[1])}")
+    for i in range(P):
+        print(f"  {pnames[i]} — Score: {scores[i]}   Lives: {hearts(lives[i], max_lives)}")
 
-    if scores[0] > scores[1]:
-        print(f"\n🏆 Winner: {pnames[0]}!")
-    elif scores[1] > scores[0]:
-        print(f"\n🏆 Winner: {pnames[1]}!")
+    max_score = max(scores) if scores else 0
+    winners = [pnames[i] for i, sc in enumerate(scores) if sc == max_score]
+    if len(winners) == 1:
+        print(f"\n🏆 Winner: {winners[0]}!")
     else:
-        print("\n🤝 It’s a tie!")
-
+        print("\n🤝 It’s a tie between: " + ", ".join(winners))
     print()
     return True
-
 
 # ---------------- Main ----------------
 def main(argv: Optional[list[str]] = None) -> None:
@@ -664,38 +695,27 @@ def main(argv: Optional[list[str]] = None) -> None:
     while True:
         print("\nSelect game mode:")
         print("  (1) Single Player")
-        print("  (2) Two Players")
+        print("  (2) Multiplayer (1–4 players)")
         print("  (Q) Quit")
         mode = input("Your choice: ").strip().lower()
 
         if mode == "q":
             break
-        elif mode in ("1", "2"):
+        elif mode == "1":
+            max_lives = choose_lives_preset()
             pool = choose_pool(all_songs)
-
-            if mode == "1":
-                cont = play_single(pool)
-                if not cont:
-                    continue
-            else:
-                print("\nEnter both player names separated by a comma (e.g. Alice,Bob):")
-                names_input = input("Names: ").strip()
-                if not names_input:
-                    pnames = ("Player 1", "Player 2")
-                else:
-                    parts = [p.strip() for p in names_input.split(",") if p.strip()]
-                    if len(parts) < 2:
-                        parts.append("Player 2")
-                    pnames = (parts[0], parts[1])
-                cont = play_two(pool, pnames)
-                if not cont:
-                    continue
+            play_single(pool, max_lives)
+        elif mode == "2":
+            count = get_player_count()
+            pnames = get_player_names(count)
+            max_lives = choose_lives_preset()
+            pool = choose_pool(all_songs)
+            play_multi(pool, pnames, max_lives)
         else:
             print("Invalid choice, try again.\n")
 
     print("\n👋 Thanks for playing!")
     sys.exit(0)
-
 
 if __name__ == "__main__":
     main()
