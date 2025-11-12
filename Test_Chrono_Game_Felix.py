@@ -532,7 +532,7 @@ def choose_lives_preset() -> int:
         print("Enter 1, 2, or 3.\n")
 
 
-# ----------- Gamemode selection (replaces old 'choose_pool') -----------
+# ----------- Gamemode selection -----------
 def choose_gamemode_single() -> str:
     """Singleplayer game-mode."""
     print("\n🎮 Select Game-mode:")
@@ -565,14 +565,15 @@ def choose_gamemode_multi() -> str:
 
 
 def build_pool(all_songs: List[Song], mode: str) -> List[Song]:
-    if mode == "Popular":
+    """Return appropriate pool for mode. Party always uses Popular."""
+    if mode in ("Popular", "Party"):
         popular = filter_popular(all_songs, 75)
         if not popular:
             print("No songs meet ≥75 popularity. Using Standard pool.\n")
             return all_songs
         print(f"\n🎧 Using Popular pool: {len(popular)} songs.\n")
         return popular
-    # Standard & Party use full pool
+    # Standard
     return all_songs
 
 
@@ -608,12 +609,15 @@ def play_single(all_songs: List[Song], max_lives: int, mode: str) -> bool:
         if is_correct_insertion(timeline, cand, idx):
             score += 1
             print(f"\033[92m✅ Correct!\033[0m   Year: {cand.year}\n")
+            # Singleplayer keeps original behavior: add to timeline on any guess
+            timeline = sorted(timeline + [cand], key=lambda s: s.year)
         else:
             lives -= 1
             print(f"\033[91m❌ Wrong!\033[0m   '{cand.track_name}' was {cand.year}")
             print(f"Remaining lives: {hearts(lives, max_lives)}\n")
+            # Wrong guess: still add to timeline in singleplayer (unchanged)
+            timeline = sorted(timeline + [cand], key=lambda s: s.year)
 
-        timeline = sorted(timeline + [cand], key=lambda s: s.year)
         used_ids.add(cand.track_id)
         used_years.add(cand.year)
 
@@ -661,6 +665,8 @@ def play_multi(all_songs: List[Song], player_names: Tuple[str, ...], max_lives: 
     lives = [max_lives for _ in range(P)]
     scores = [0 for _ in range(P)]
     streaks = [0 for _ in range(P)]
+    sips   = [0 for _ in range(P)]
+    chugs  = [0 for _ in range(P)]
     current = 0
 
     print("\n" + "=" * 64)
@@ -697,7 +703,7 @@ def play_multi(all_songs: List[Song], player_names: Tuple[str, ...], max_lives: 
             print("\n↩️ Returning to main menu...\n")
             return False
 
-        # Compute true correct index among full slots (0..len(timeline))
+        # Compute the true correct index among all slots (0..len(timeline))
         tl_sorted = sorted(timeline, key=lambda s: s.year)
         true_idx = sum(1 for s in tl_sorted if s.year < cand.year)
         offset_songs = abs(idx - true_idx)
@@ -706,11 +712,14 @@ def play_multi(all_songs: List[Song], player_names: Tuple[str, ...], max_lives: 
             scores[current] += 1
             streaks[current] += 1
             print(f"\033[92m✅ Correct, {pnames[current]}!\033[0m   Year: {cand.year} • Streak: {streaks[current]}\n")
+            # Multiplayer refinement: only add to timeline when CORRECT
+            timeline = sorted(timeline + [cand], key=lambda s: s.year)
 
             # Party rule 2: streak of 3 -> pick someone to sip
             if mode == "Party" and streaks[current] == 3:
                 target = choose_other_player(pnames, current, lives)
                 if target is not None:
+                    sips[target] += 1  # count the awarded sip
                     print(f"🎉 {pnames[current]} earned a streak of 3! {pnames[current]} selects {pnames[target]} — take a sip 🍻\n")
                 streaks[current] = 0  # reset after reward
         else:
@@ -718,15 +727,24 @@ def play_multi(all_songs: List[Song], player_names: Tuple[str, ...], max_lives: 
             streaks[current] = 0
             lives[current] -= 1
             print(f"\033[91m❌ Wrong, {pnames[current]}!\033[0m   '{cand.track_name}' was {cand.year}")
+
+            # Party rule messages/counters:
             if mode == "Party":
-                print("👉 Party rule: take a sip 🍻")
                 if offset_songs >= 3:
+                    chugs[current] += 1
                     print("😵 Party rule: off by 3+ songs — chug your drink 🍺")
+                else:
+                    sips[current] += 1
+                    print("👉 Party rule: take a sip 🍻")
+
             print(f"Remaining lives: {hearts(lives[current], max_lives)}\n")
+
             if lives[current] == 0:
                 print(f"🪦 {pnames[current]} has been eliminated!\n")
 
-        timeline = sorted(timeline + [cand], key=lambda s: s.year)
+            # Multiplayer refinement: DO NOT add wrong guess to timeline
+
+        # Regardless of correctness, the song is consumed from the pool
         used_ids.add(cand.track_id)
         used_years.add(cand.year)
 
@@ -739,6 +757,12 @@ def play_multi(all_songs: List[Song], player_names: Tuple[str, ...], max_lives: 
     print("\nFinal scores:")
     for i in range(P):
         print(f"  {pnames[i]} — Score: {scores[i]}   Lives: {hearts(lives[i], max_lives)}")
+
+    # Show Party counters if relevant
+    if mode == "Party":
+        print("\n🍻 Party tally:")
+        for i in range(P):
+            print(f"  {pnames[i]} — Sips: {sips[i]}   Chugs: {chugs[i]}")
 
     max_score = max(scores) if scores else 0
     winners = [pnames[i] for i, sc in enumerate(scores) if sc == max_score]
