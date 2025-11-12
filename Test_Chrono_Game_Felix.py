@@ -323,8 +323,6 @@ else:
     st.button("⬅ Back to Home", key="back_next", on_click=lambda: go("home"))
 
 
-# ---------------- BACKEND ---------------
-
 # ---------------- Config ----------------
 DEFAULT_DATA_PATH = "songs_input.xlsx"
 REQUIRED_COLS = ["track_id", "track_name", "track_artist", "year", "track_url"]
@@ -517,30 +515,6 @@ def next_alive_from(current_idx: int, lives: List[int]) -> Optional[int]:
     return None
 
 
-def choose_pool(all_songs: List[Song]) -> List[Song]:
-    has_popular_data = any(s.popularity is not None for s in all_songs)
-
-    print("\n🎵 Choose song pool:")
-    print("  (1) Standard — all songs")
-    if has_popular_data:
-        print("  (2) Popular only — track_popularity ≥ 75")
-    else:
-        print("  (2) Popular only — [unavailable: no popularity data]")
-
-    while True:
-        sel = input("Your choice: ").strip()
-        if sel == "1":
-            return all_songs
-        if sel == "2" and has_popular_data:
-            popular = filter_popular(all_songs, 75)
-            if not popular:
-                print("No songs meet ≥75 popularity. Using Standard pool.\n")
-                return all_songs
-            print(f"\n🎧 Using Popular pool: {len(popular)} songs.\n")
-            return popular
-        print("Enter 1 or 2.\n")
-
-
 def choose_lives_preset() -> int:
     """Return the max lives per player based on preset selection."""
     print("\nSelect Lives:")
@@ -557,8 +531,55 @@ def choose_lives_preset() -> int:
             return 5
         print("Enter 1, 2, or 3.\n")
 
+
+# ----------- Gamemode selection (replaces old 'choose_pool') -----------
+def choose_gamemode_single() -> str:
+    """Singleplayer game-mode."""
+    print("\n🎮 Select Game-mode:")
+    print("  (1) Standard  — all songs")
+    print("  (2) Popular   — track_popularity ≥ 75")
+    while True:
+        sel = input("Your choice: ").strip()
+        if sel == "1":
+            return "Standard"
+        if sel == "2":
+            return "Popular"
+        print("Enter 1 or 2.\n")
+
+
+def choose_gamemode_multi() -> str:
+    """Multiplayer game-mode (adds Party)."""
+    print("\n🎮 Select Game-mode:")
+    print("  (1) Standard")
+    print("  (2) Popular")
+    print("  (3) Party  🍻")
+    while True:
+        sel = input("Your choice: ").strip()
+        if sel == "1":
+            return "Standard"
+        if sel == "2":
+            return "Popular"
+        if sel == "3":
+            return "Party"
+        print("Enter 1, 2, or 3.\n")
+
+
+def build_pool(all_songs: List[Song], mode: str) -> List[Song]:
+    if mode == "Popular":
+        popular = filter_popular(all_songs, 75)
+        if not popular:
+            print("No songs meet ≥75 popularity. Using Standard pool.\n")
+            return all_songs
+        print(f"\n🎧 Using Popular pool: {len(popular)} songs.\n")
+        return popular
+    # Standard & Party use full pool
+    return all_songs
+
+
 # ---------------- Single-player ----------------
-def play_single(song_pool: List[Song], max_lives: int) -> bool:
+def play_single(all_songs: List[Song], max_lives: int, mode: str) -> bool:
+    song_pool = build_pool(all_songs, mode)
+
     random.seed()
     starter = random.choice(song_pool)
     timeline = [starter]
@@ -566,7 +587,7 @@ def play_single(song_pool: List[Song], max_lives: int) -> bool:
     lives, score = max_lives, 0
 
     print("\n" + "=" * 64)
-    print("🎵  Chronology — Single Player")
+    print(f"🎵  Chronology — Single Player • Mode: {mode}")
     print("=" * 64)
     print(f"Starter: {starter.label(True)}\n")
     print(f"Lives: {hearts(lives, max_lives)}   Score: {score}\n")
@@ -602,7 +623,34 @@ def play_single(song_pool: List[Song], max_lives: int) -> bool:
             return True
 
 # ---------------- Multiplayer (1–4) ----------------
-def play_multi(song_pool: List[Song], player_names: Tuple[str, ...], max_lives: int) -> bool:
+def describe_party_rules():
+    print("\n🎉 Party Mode rules active! 🍻")
+    print("  1) Incorrect guess → take a sip 🍻")
+    print("  2) Streak of 3 correct → pick someone else to sip 🍻")
+    print("  3) Off by 3+ songs → chug your drink 🍺\n")
+
+
+def choose_other_player(pnames: List[str], current: int, lives: List[int]) -> Optional[int]:
+    alive_others = [i for i, v in enumerate(lives) if v > 0 and i != current]
+    if not alive_others:
+        return None
+    print("Select a player to take a sip:")
+    for k, idx in enumerate(alive_others, start=1):
+        print(f"  ({k}) {pnames[idx]}")
+    while True:
+        sel = input("Your choice: ").strip()
+        try:
+            k = int(sel)
+            if 1 <= k <= len(alive_others):
+                return alive_others[k - 1]
+        except ValueError:
+            pass
+        print("Invalid choice.\n")
+
+
+def play_multi(all_songs: List[Song], player_names: Tuple[str, ...], max_lives: int, mode: str) -> bool:
+    song_pool = build_pool(all_songs, mode)
+
     random.seed()
     starter = random.choice(song_pool)
     timeline = [starter]
@@ -612,11 +660,14 @@ def play_multi(song_pool: List[Song], player_names: Tuple[str, ...], max_lives: 
     P = len(pnames)
     lives = [max_lives for _ in range(P)]
     scores = [0 for _ in range(P)]
+    streaks = [0 for _ in range(P)]
     current = 0
 
     print("\n" + "=" * 64)
-    print(f"🎵  Chronology — {P} Player{'s' if P!=1 else ''}")
+    print(f"🎵  Chronology — {P} Player{'s' if P!=1 else ''} • Mode: {mode}")
     print("=" * 64)
+    if mode == "Party":
+        describe_party_rules()
     print(f"Starter: {starter.label(True)}\n")
     for i in range(P):
         print(f"{pnames[i]}  Lives: {hearts(lives[i], max_lives)}   Score: {scores[i]}")
@@ -646,12 +697,31 @@ def play_multi(song_pool: List[Song], player_names: Tuple[str, ...], max_lives: 
             print("\n↩️ Returning to main menu...\n")
             return False
 
+        # Compute true correct index among full slots (0..len(timeline))
+        tl_sorted = sorted(timeline, key=lambda s: s.year)
+        true_idx = sum(1 for s in tl_sorted if s.year < cand.year)
+        offset_songs = abs(idx - true_idx)
+
         if is_correct_insertion(timeline, cand, idx):
             scores[current] += 1
-            print(f"\033[92m✅ Correct, {pnames[current]}!\033[0m   Year: {cand.year}\n")
+            streaks[current] += 1
+            print(f"\033[92m✅ Correct, {pnames[current]}!\033[0m   Year: {cand.year} • Streak: {streaks[current]}\n")
+
+            # Party rule 2: streak of 3 -> pick someone to sip
+            if mode == "Party" and streaks[current] == 3:
+                target = choose_other_player(pnames, current, lives)
+                if target is not None:
+                    print(f"🎉 {pnames[current]} earned a streak of 3! {pnames[current]} selects {pnames[target]} — take a sip 🍻\n")
+                streaks[current] = 0  # reset after reward
         else:
+            # Wrong answer
+            streaks[current] = 0
             lives[current] -= 1
             print(f"\033[91m❌ Wrong, {pnames[current]}!\033[0m   '{cand.track_name}' was {cand.year}")
+            if mode == "Party":
+                print("👉 Party rule: take a sip 🍻")
+                if offset_songs >= 3:
+                    print("😵 Party rule: off by 3+ songs — chug your drink 🍺")
             print(f"Remaining lives: {hearts(lives[current], max_lives)}\n")
             if lives[current] == 0:
                 print(f"🪦 {pnames[current]} has been eliminated!\n")
@@ -703,14 +773,14 @@ def main(argv: Optional[list[str]] = None) -> None:
             break
         elif mode == "1":
             max_lives = choose_lives_preset()
-            pool = choose_pool(all_songs)
-            play_single(pool, max_lives)
+            gm = choose_gamemode_single()     # Standard / Popular
+            play_single(all_songs, max_lives, gm)
         elif mode == "2":
             count = get_player_count()
             pnames = get_player_names(count)
+            gm = choose_gamemode_multi()      # Standard / Popular / Party
             max_lives = choose_lives_preset()
-            pool = choose_pool(all_songs)
-            play_multi(pool, pnames, max_lives)
+            play_multi(all_songs, pnames, max_lives, gm)
         else:
             print("Invalid choice, try again.\n")
 
