@@ -15,12 +15,306 @@ Shows clickable (or plain) links for each challenge song.
 
 from __future__ import annotations
 import argparse
+import streamlit as st
 import os
 import random
 import sys
 from dataclasses import dataclass
 from typing import List, Optional, Set, Tuple
+from pathlib import Path
 import pandas as pd
+
+
+
+
+# ------ FrontEnd -----------------------
+
+
+st.set_page_config(page_title="HitStory", page_icon="🎵", layout="wide")
+APP_DIR = Path(__file__).parent
+LOGO = APP_DIR / "Logo_V1.png"
+
+# Brand colors
+PURPLE = "#2D0D57"
+PANEL = "#4978C8"
+PANEL_BORDER = "#2a4d98"
+PINK = "#ff5aa3"
+TEXT = "#ffffff"
+
+# ------------------ Global CSS ------------------
+st.markdown(
+    f"""
+    <style>
+    :root {{
+      --purple:{PURPLE}; --panel:{PANEL}; --panelBorder:{PANEL_BORDER}; --pink:{PINK}; --text:{TEXT};
+    }}
+    /* app background */
+    [data-testid="stAppViewContainer"] {{
+      background: var(--purple);
+      color: var(--text);
+    }}
+    /* fill viewport & center vertically so no scroll on normal screens */
+    [data-testid="stAppViewContainer"] > .main {{
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }}
+    /* hide default chrome */
+    [data-testid="stHeader"], [data-testid="stToolbar"], footer {{ display:none !important; }}
+
+    /* logo */
+    .hero {{ text-align:center; margin: 0 0 .5rem 0; }}
+    .hero img {{
+      max-width: 320px;            /* tweak if still too big/small */
+      width: 48%;
+      margin: 0 auto;
+      display: block;
+    }}
+
+    /* panel blocks */
+    .panel {{
+      background: var(--panel);
+      border: 3px solid var(--panelBorder);
+      border-radius: 12px;
+      padding: 12px 16px;
+      color: white;
+      font-weight: 700;
+      text-align: center;
+    }}
+    .panel.soft {{
+      text-align: left;
+      font-weight: 500;
+      line-height: 1.55;
+    }}
+
+    /* bullets pink */
+    .how li::marker {{ color: var(--pink); }}
+    .how li {{ margin: .35rem 0; }}
+
+    /* pink buttons */
+    .stButton>button {{
+      background: linear-gradient(180deg,#ff77b4,#ff5aa3);
+      color: white;
+      font-weight: 800;
+      border: none;
+      border-radius: 12px;
+      box-shadow: 0 5px 0 #c23c79;
+      padding: .8rem 1rem;
+    }}
+    .stButton>button:hover {{ filter: brightness(1.05); }}
+    .stButton>button:active {{ transform: translateY(2px); box-shadow: 0 3px 0 #c23c79; }}
+
+    .rowgap {{ margin: .4rem 0 .6rem 0; }}
+    .hint {{ opacity:.9; font-weight:600; }}
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+# ------------------ Simple router ------------------
+def go(page: str):
+    st.session_state.screen = page
+    # works across Streamlit versions
+    st.experimental_rerun()
+
+if "screen" not in st.session_state:
+    st.session_state.screen = "home"
+
+# store selections for next pages
+if "single" not in st.session_state:
+    st.session_state.single = {"mode": "Standard", "lives": 3}
+if "multi" not in st.session_state:
+    st.session_state.multi = {"players": 2, "names": [], "mode": "Standard", "lives": 3}
+
+# ------------------ Common header ------------------
+def header_logo():
+    st.markdown('<div class="hero">', unsafe_allow_html=True)
+    if LOGO.exists():
+        st.image(LOGO.read_bytes(), use_column_width=False)
+    else:
+        st.markdown('<h1 style="font-weight:900;color:#fff;">HitStory</h1>', unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+# ------------------ HOME ------------------
+def screen_home():
+    header_logo()
+    # centered button column
+    c1, c2, c3 = st.columns([1, 1, 1])
+    with c2:
+        st.button("Singleplayer", use_container_width=True, on_click=lambda: go("single"))
+        st.write("")
+        st.button("Multiplayer", use_container_width=True, on_click=lambda: go("multi"))
+
+# ------------------ SINGLEPLAYER SETUP ------------------
+def screen_single():
+    header_logo()
+    st.markdown('<div class="panel">🧍 Singleplayer!</div>', unsafe_allow_html=True)
+    st.write("")
+    left, right = st.columns([1.15, 1.3], gap="large")
+
+    with left:
+        st.markdown('<div class="panel soft">', unsafe_allow_html=True)
+        st.markdown("### How to play!", unsafe_allow_html=True)
+        st.markdown(
+            """
+            <ul class="how">
+              <li>Choose your game-mode & how many lives you want.</li>
+              <li>Listen to the song that is being played.</li>
+              <li>A hint will be given if needed (artist & song name).</li>
+              <li>Place the song correctly on the timeline according to its release year.</li>
+              <li>If you lose all 3 lives, play again!</li>
+            </ul>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    with right:
+        # Game mode
+        st.markdown('<div class="panel">Select Game-mode</div>', unsafe_allow_html=True)
+        st.markdown('<div class="rowgap"></div>', unsafe_allow_html=True)
+        g1, g2, g3 = st.columns(3)
+        with g1:
+            if st.button("🎵  Standard", use_container_width=True, key="s_std"):
+                st.session_state.single["mode"] = "Standard"
+        with g2:
+            if st.button("⭐  Popular", use_container_width=True, key="s_pop"):
+                st.session_state.single["mode"] = "Popular"
+        with g3:
+            if st.button("🥳  Party", use_container_width=True, key="s_party"):
+                st.session_state.single["mode"] = "Party"
+
+        # Lives
+        st.markdown('<div class="rowgap"></div>', unsafe_allow_html=True)
+        st.markdown('<div class="panel">Select Lives</div>', unsafe_allow_html=True)
+        st.markdown('<div class="rowgap"></div>', unsafe_allow_html=True)
+        l1, l2, l3 = st.columns(3)
+        with l1:
+            if st.button("③  Standard", use_container_width=True, key="s_l3"):
+                st.session_state.single["lives"] = 3
+        with l2:
+            if st.button("①  Hardcore", use_container_width=True, key="s_l1"):
+                st.session_state.single["lives"] = 1
+        with l3:
+            if st.button("⑤  Fun", use_container_width=True, key="s_l5"):
+                st.session_state.single["lives"] = 5
+
+        st.caption(
+            f"""<div class="hint">Selected: <b>{st.session_state.single['mode']}</b> • <b>{st.session_state.single['lives']}</b> lives</div>""",
+            unsafe_allow_html=True,
+        )
+        st.write("")
+        mid = st.columns([1, 1, 1])[1]
+        with mid:
+            st.button("Continue ➜", use_container_width=True, type="primary", key="s_next",
+                      on_click=lambda: go("single-next"))
+
+    st.write("")
+    st.button("⬅ Back to Home", key="back_single", on_click=lambda: go("home"))
+
+# ------------------ MULTIPLAYER SETUP ------------------
+def screen_multi():
+    header_logo()
+    st.markdown('<div class="panel">👥 Multiplayer!</div>', unsafe_allow_html=True)
+    st.write("")
+    left, right = st.columns([1.15, 1.3], gap="large")
+
+    with left:
+        st.markdown('<div class="panel soft">', unsafe_allow_html=True)
+        st.markdown("### How to play!", unsafe_allow_html=True)
+        st.markdown(
+            """
+            <ul class="how">
+              <li>How many players? Enter all of the names.</li>
+              <li>Choose your game-mode & how many lives you want.</li>
+              <li>Listen to the song that is being played.</li>
+              <li>A hint will be given if needed (artist & song name).</li>
+              <li>Place the song correctly on the timeline according to its release year.</li>
+              <li>If you lose all 3 lives, play again!</li>
+            </ul>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    with right:
+        # Player count
+        st.markdown('<div class="panel">Select number of players (2–5)</div>', unsafe_allow_html=True)
+        st.markdown('<div class="rowgap"></div>', unsafe_allow_html=True)
+        st.session_state.multi["players"] = st.slider("", min_value=2, max_value=5,
+                                                      value=st.session_state.multi["players"], key="m_count")
+
+        # Names
+        st.markdown('<div class="rowgap"></div>', unsafe_allow_html=True)
+        st.markdown('<div class="panel">Input Names</div>', unsafe_allow_html=True)
+        st.markdown('<div class="rowgap"></div>', unsafe_allow_html=True)
+        names = []
+        cols = st.columns(2)
+        for i in range(st.session_state.multi["players"]):
+            col = cols[i % 2]
+            with col:
+                default = st.session_state.multi["names"][i] if i < len(st.session_state.multi["names"]) else ""
+                names.append(st.text_input(f"Player {i+1}", value=default, key=f"m_name_{i}"))
+        st.session_state.multi["names"] = names
+
+        # Mode
+        st.markdown('<div class="rowgap"></div>', unsafe_allow_html=True)
+        st.markdown('<div class="panel">Select Game-mode</div>', unsafe_allow_html=True)
+        st.markdown('<div class="rowgap"></div>', unsafe_allow_html=True)
+        g1, g2, g3 = st.columns(3)
+        with g1:
+            if st.button("🎵  Standard", use_container_width=True, key="m_std"):
+                st.session_state.multi["mode"] = "Standard"
+        with g2:
+            if st.button("⭐  Popular", use_container_width=True, key="m_pop"):
+                st.session_state.multi["mode"] = "Popular"
+        with g3:
+            if st.button("🥳  Party", use_container_width=True, key="m_party"):
+                st.session_state.multi["mode"] = "Party"
+
+        # Lives
+        st.markdown('<div class="rowgap"></div>', unsafe_allow_html=True)
+        st.markdown('<div class="panel">Select Lives</div>', unsafe_allow_html=True)
+        st.markdown('<div class="rowgap"></div>', unsafe_allow_html=True)
+        l1, l2, l3 = st.columns(3)
+        with l1:
+            if st.button("③  Standard", use_container_width=True, key="m_l3"):
+                st.session_state.multi["lives"] = 3
+        with l2:
+            if st.button("①  Hardcore", use_container_width=True, key="m_l1"):
+                st.session_state.multi["lives"] = 1
+        with l3:
+            if st.button("⑤  Fun", use_container_width=True, key="m_l5"):
+                st.session_state.multi["lives"] = 5
+
+        st.caption(
+            f"""<div class="hint">Selected: <b>{st.session_state.multi['mode']}</b> • <b>{st.session_state.multi['lives']}</b> lives • Players: <b>{st.session_state.multi['players']}</b></div>""",
+            unsafe_allow_html=True,
+        )
+        st.write("")
+        mid = st.columns([1, 1, 1])[1]
+        with mid:
+            st.button("Continue ➜", use_container_width=True, type="primary", key="m_next",
+                      on_click=lambda: go("multi-next"))
+
+    st.write("")
+    st.button("⬅ Back to Home", key="back_multi", on_click=lambda: go("home"))
+
+# ------------------ Router ------------------
+page = st.session_state.screen
+if page == "home":
+    screen_home()
+elif page == "single":
+    screen_single()
+elif page == "multi":
+    screen_multi()
+else:
+    # Placeholder for next pages (actual gameplay screens)
+    header_logo()
+    st.subheader("Next page coming…")
+    st.caption("We’ll wire gameplay here using your backend functions next.")
+    st.button("⬅ Back to Home", key="back_next", on_click=lambda: go("home"))
 
 # ---------------- Config ----------------
 DEFAULT_DATA_PATH = "songs_input.xlsx"
