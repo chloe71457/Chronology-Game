@@ -115,8 +115,14 @@ st.markdown(
 # ------------------ Simple router ------------------
 def go(page: str):
     st.session_state.screen = page
-    # works across Streamlit versions
-    st.experimental_rerun()
+    try:
+        # new Streamlit version
+        st.rerun()
+    except AttributeError:
+        # fallback for older versions
+        from streamlit.runtime.scriptrunner import RerunException
+        from streamlit.runtime.scriptrunner import rerun
+        raise RerunException(rerun)
 
 if "screen" not in st.session_state:
     st.session_state.screen = "home"
