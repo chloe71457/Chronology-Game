@@ -4,24 +4,10 @@ HitStory – Chronology (Hitster-style) Streamlit game.
 
 Singleplayer + Multiplayer with backend rules from console version.
 
-Singleplayer:
-- starter song on timeline
-- choose position between years (slots)
-- correctness check with is_correct_insertion
-- lives & score updates
-- deck exhaustion handling
-- adds song to timeline on every guess
-
-Multiplayer:
-- 2–5 players
-- Standard / Popular / Party modes
-- lives & scores per player
-- turn rotation, elimination
-- only correct guesses extend the timeline
-- Party rules:
-    * incorrect guess → sip
-    * off by 3+ songs → chug
-    * streak of 3 correct → random other alive player sips
+Extras:
+- Timeline capped at 12 songs (no more covers added beyond 12)
+- Automatic results pages when game ends
+- Tracking of score, longest streak and mistakes
 """
 
 from __future__ import annotations
@@ -140,7 +126,9 @@ st.markdown(
 # Navigation state
 # -------------------------------------------------
 if "page" not in st.session_state:
-    st.session_state.page = "home"  # "home", "single_setup", "single_game", "multi_setup", "multi_game"
+    # home, single_setup, single_game, single_results,
+    # multi_setup, multi_game, multi_results
+    st.session_state.page = "home"
 
 
 def go(page: str):
@@ -421,6 +409,9 @@ def init_single_game_state():
         "lives_max": single_cfg.get("lives", 3),
         "lives": single_cfg.get("lives", 3),
         "score": 0,
+        "streak": 0,
+        "best_streak": 0,
+        "mistakes": 0,
         "used_ids": used_ids,
         "used_years": used_years,
         "status": "playing",  # playing | game_over | deck_clear
@@ -440,30 +431,38 @@ def process_single_guess(insert_idx: int):
     correct = is_correct_insertion(timeline, cand, insert_idx)
     if correct:
         game["score"] += 1
+        game["streak"] += 1
+        game["best_streak"] = max(game["best_streak"], game["streak"])
         game["message"] = f"✅ Correct! “{cand.track_name}” was released in {cand.year}."
     else:
         game["lives"] -= 1
+        game["mistakes"] += 1
+        game["streak"] = 0
         game["message"] = f"❌ Wrong! “{cand.track_name}” was released in {cand.year}."
 
-    # Singleplayer rule: add to timeline regardless
-    new_timeline = sorted(timeline + [cand], key=lambda s: s.year)
-    game["timeline"] = new_timeline
+    # add song to timeline while < 12 songs
+    if len(timeline) < 12:
+        game["timeline"] = sorted(timeline + [cand], key=lambda s: s.year)
 
-    # Consume card
+    # consume card
     game["used_ids"].add(cand.track_id)
     game["used_years"].add(cand.year)
 
+    # game end?
     if game["lives"] <= 0:
         game["status"] = "game_over"
         game["current"] = None
+        go("single_results")
         return
 
     next_song = choose_next_song(game["pool"], game["used_ids"], game["used_years"])
     if next_song is None:
         game["status"] = "deck_clear"
         game["current"] = None
-    else:
-        game["current"] = next_song
+        go("single_results")
+        return
+
+    game["current"] = next_song
 
 
 # -------------------------------------------------
@@ -487,7 +486,7 @@ def page_single_game():
             f"""
             <div class="panel" style="text-align:left;">
               <div style="font-size:1.4rem; line-height:1.2;">Scoreboard</div>
-              <div style="margin-top:.5rem;">Player 1 — {lives_str}</div>
+              <div style="margin-top:.5rem;">Player — {lives_str}</div>
               <div>Score — <b>{game['score']}</b></div>
             </div>
             """,
@@ -538,7 +537,7 @@ def page_single_game():
             st.markdown(
                 """
                 <div class="panel" style="margin-top:1rem;">
-                  No more songs in the deck.
+                  No more hearts left
                 </div>
                 """,
                 unsafe_allow_html=True,
@@ -546,12 +545,7 @@ def page_single_game():
 
     # Feedback
     if game["message"]:
-        if game["status"] == "playing":
-            st.info(game["message"])
-        elif game["status"] == "game_over":
-            st.error(game["message"])
-        elif game["status"] == "deck_clear":
-            st.success(game["message"])
+        st.info(game["message"])
 
     st.write("")
 
@@ -563,11 +557,9 @@ def page_single_game():
         # columns: slot0, cover0, slot1, cover1, ..., coverN-1, slotN
         cols = st.columns(len(tl_sorted) * 2 + 1)
 
-        # first row: slot buttons + covers
         clicked_pos: Optional[int] = None
         for p in range(len(tl_sorted) * 2 + 1):
             with cols[p]:
-                # slot positions are even indices
                 if p % 2 == 0:
                     slot_index = p // 2
                     if slot_index in allowed_positions and current is not None and game["status"] == "playing":
@@ -579,7 +571,6 @@ def page_single_game():
                     else:
                         st.write(" ")
                 else:
-                    # cover + year
                     song = tl_sorted[p // 2]
                     if song.track_cover:
                         st.image(song.track_cover, use_container_width=True)
@@ -607,7 +598,7 @@ def page_single_game():
                         unsafe_allow_html=True,
                     )
 
-        # second row: labels under slots (Before / Between / After)
+        # label row
         label_cols = st.columns(len(tl_sorted) * 2 + 1)
         for p in range(len(tl_sorted) * 2 + 1):
             with label_cols[p]:
@@ -633,16 +624,9 @@ def page_single_game():
                 else:
                     st.write(" ")
 
-        # process click
         if clicked_pos is not None:
             process_single_guess(clicked_pos)
             st.rerun()
-
-    # End-of-game summary
-    if game["status"] == "game_over":
-        st.error(f"Game over! Final score: {game['score']}")
-    elif game["status"] == "deck_clear":
-        st.success(f"🎉 You cleared the deck! Final score: {game['score']}")
 
     st.write("")
     col_back, col_new = st.columns([1, 1])
@@ -654,6 +638,60 @@ def page_single_game():
         if st.button("🔁 New game", key="new_single_game"):
             init_single_game_state()
             st.rerun()
+
+
+# -------------------------------------------------
+# Singleplayer results page
+# -------------------------------------------------
+def page_single_results():
+    if "single_game" not in st.session_state:
+        go("single_setup")
+        st.rerun()
+
+    game = st.session_state.single_game
+    header_logo()
+
+    st.markdown('<div class="panel">Results</div>', unsafe_allow_html=True)
+    st.write("")
+
+    st.markdown(
+        f"<div style='text-align:center;margin-top:1rem;font-size:1.2rem;'>"
+        f"Your final score is <b>{game['score']}</b> 🎉"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        "<div style='text-align:center;margin-top:1.5rem;'>"
+        "Thank you for playing <b>HitStory</b>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
+    st.write("")
+    # Table-style layout
+    c1, c2, c3 = st.columns([1.2, 1, 1])
+    with c1:
+        st.markdown("<div class='panel'>Player</div>", unsafe_allow_html=True)
+        st.markdown("<div style='margin-top:.75rem; text-align:center;'>You</div>", unsafe_allow_html=True)
+    with c2:
+        st.markdown("<div class='panel'>Score</div>", unsafe_allow_html=True)
+        st.markdown(
+            f"<div style='margin-top:.75rem; text-align:center;'>{game['score']}</div>",
+            unsafe_allow_html=True,
+        )
+    with c3:
+        st.markdown("<div class='panel'>Longest streak</div>", unsafe_allow_html=True)
+        st.markdown(
+            f"<div style='margin-top:.75rem; text-align:center;'>{game['best_streak']}</div>",
+            unsafe_allow_html=True,
+        )
+
+    st.write("")
+    st.write("")
+    if st.button("⬅ Back to main menu"):
+        go("home")
+        st.rerun()
 
 
 # -------------------------------------------------
@@ -799,6 +837,8 @@ def init_multi_game_state():
         "lives": [lives_max for _ in range(P)],
         "scores": [0 for _ in range(P)],
         "streaks": [0 for _ in range(P)],
+        "best_streaks": [0 for _ in range(P)],
+        "mistakes": [0 for _ in range(P)],
         "sips": [0 for _ in range(P)],
         "chugs": [0 for _ in range(P)],
         "current_idx": 0,
@@ -822,26 +862,26 @@ def process_multi_guess(insert_idx: int):
     cand: Song = game["current"]
     i = game["current_idx"]
 
-    # compute offset in "songs" to decide sip / chug in party mode
     tl_sorted = sorted(timeline, key=lambda s: s.year)
     true_idx = sum(1 for s in tl_sorted if s.year < cand.year)
     offset_songs = abs(insert_idx - true_idx)
 
-    # reset party message each turn
     game["party_message"] = ""
 
     if is_correct_insertion(timeline, cand, insert_idx):
         game["scores"][i] += 1
         game["streaks"][i] += 1
+        game["best_streaks"][i] = max(game["best_streaks"][i], game["streaks"][i])
         game["message"] = (
             f"✅ Correct, {names[i]}! “{cand.track_name}” was released in {cand.year}. "
             f"Streak: {game['streaks'][i]}"
         )
 
-        # Multiplayer refinement: only add if correct
-        game["timeline"] = sorted(timeline + [cand], key=lambda s: s.year)
+        # add to timeline only while < 12 songs
+        if len(timeline) < 12:
+            game["timeline"] = sorted(timeline + [cand], key=lambda s: s.year)
 
-        # Party rule 2: streak of 3 → pick someone to sip (here: random alive other)
+        # Party: streak of 3 → random other alive player sips
         if mode == "Party" and game["streaks"][i] == 3:
             alive_others = [j for j, v in enumerate(game["lives"]) if v > 0 and j != i]
             if alive_others:
@@ -853,9 +893,9 @@ def process_multi_guess(insert_idx: int):
                 )
             game["streaks"][i] = 0
     else:
-        # wrong guess
         game["streaks"][i] = 0
         game["lives"][i] -= 1
+        game["mistakes"][i] += 1
         game["message"] = (
             f"❌ Wrong, {names[i]}! “{cand.track_name}” was released in {cand.year}."
         )
@@ -868,26 +908,25 @@ def process_multi_guess(insert_idx: int):
                 game["sips"][i] += 1
                 game["party_message"] = "👉 Take a sip 🍻"
 
-    # consume card regardless of correctness
+    # consume card
     game["used_ids"].add(cand.track_id)
     game["used_years"].add(cand.year)
 
-    # check if player eliminated
     if game["lives"][i] <= 0:
         game["message"] += f"  🪦 {names[i]} has been eliminated!"
 
-    # check whether any players remain
     nxt = next_alive_from(game["current_idx"], game["lives"])
     if nxt is None:
         game["status"] = "game_over"
         game["current"] = None
+        go("multi_results")
         return
 
-    # check deck
     next_song = choose_next_song(game["pool"], game["used_ids"], game["used_years"])
     if next_song is None:
         game["status"] = "deck_clear"
         game["current"] = None
+        go("multi_results")
         return
 
     game["current_idx"] = nxt
@@ -941,7 +980,6 @@ def page_multi_game():
 
     st.write("")
 
-    # Turn indicator
     if game["status"] == "playing":
         st.markdown(
             f"<div style='font-weight:700;margin-bottom:.5rem;'>Turn: {names[i_turn]}</div>",
@@ -998,18 +1036,13 @@ def page_multi_game():
 
     # Feedback + party message
     if game["message"]:
-        if game["status"] == "playing":
-            st.info(game["message"])
-        elif game["status"] == "game_over":
-            st.error(game["message"])
-        elif game["status"] == "deck_clear":
-            st.success(game["message"])
+        st.info(game["message"])
     if game.get("party_message"):
         st.caption(game["party_message"])
 
     st.write("")
 
-    # === Interactive timeline with slot buttons between covers ===
+    # timeline
     if timeline:
         tl_sorted = sorted(timeline, key=lambda s: s.year)
         allowed_positions = compute_allowed_positions(tl_sorted)
@@ -1091,21 +1124,6 @@ def page_multi_game():
             process_multi_guess(clicked_pos)
             st.rerun()
 
-    # End-of-game summary
-    if game["status"] in ("game_over", "deck_clear"):
-        scores = game["scores"]
-        max_score = max(scores) if scores else 0
-        winners = [names[i] for i, sc in enumerate(scores) if sc == max_score]
-        if game["status"] == "game_over":
-            st.error("💥 All players are out of lives.")
-        else:
-            st.success("🎉 Deck cleared!")
-        if winners:
-            if len(winners) == 1:
-                st.success(f"🏆 Winner: {winners[0]} (Score {max_score})")
-            else:
-                st.success("🤝 Tie between: " + ", ".join(winners))
-
     st.write("")
     col_back, col_new = st.columns([1, 1])
     with col_back:
@@ -1119,6 +1137,86 @@ def page_multi_game():
 
 
 # -------------------------------------------------
+# Multiplayer results page
+# -------------------------------------------------
+def page_multi_results():
+    if "multi_game" not in st.session_state:
+        go("multi_setup")
+        st.rerun()
+
+    game = st.session_state.multi_game
+    names = game["names"]
+    scores = game["scores"]
+    best_streaks = game["best_streaks"]
+    mistakes = game["mistakes"]
+
+    header_logo()
+    st.markdown('<div class="panel">Results</div>', unsafe_allow_html=True)
+    st.write("")
+
+    max_score = max(scores) if scores else 0
+    winners = [names[i] for i, sc in enumerate(scores) if sc == max_score]
+    if winners:
+        if len(winners) == 1:
+            msg = f"{winners[0]} is the winner 🏆"
+        else:
+            msg = "It's a tie between: " + ", ".join(winners)
+        st.markdown(
+            f"<div style='text-align:center;margin-top:1rem;font-size:1.2rem;'>{msg}</div>",
+            unsafe_allow_html=True,
+        )
+
+    st.markdown(
+        "<div style='text-align:center;margin-top:1.5rem;'>"
+        "Thank you for playing <b>HitStory</b>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
+    st.write("")
+    # header row
+    h1, h2, h3, h4 = st.columns([1.2, 1, 1, 1])
+    with h1:
+        st.markdown("<div class='panel'>Player</div>", unsafe_allow_html=True)
+    with h2:
+        st.markdown("<div class='panel'>Score</div>", unsafe_allow_html=True)
+    with h3:
+        st.markdown("<div class='panel'>Longest streak</div>", unsafe_allow_html=True)
+    with h4:
+        st.markdown("<div class='panel'>Mistakes</div>", unsafe_allow_html=True)
+
+    # rows
+    for idx, name in enumerate(names):
+        c1, c2, c3, c4 = st.columns([1.2, 1, 1, 1])
+        with c1:
+            st.markdown(
+                f"<div style='margin-top:.75rem;text-align:center;'>{name}</div>",
+                unsafe_allow_html=True,
+            )
+        with c2:
+            st.markdown(
+                f"<div style='margin-top:.75rem;text-align:center;'>{scores[idx]}</div>",
+                unsafe_allow_html=True,
+            )
+        with c3:
+            st.markdown(
+                f"<div style='margin-top:.75rem;text-align:center;'>{best_streaks[idx]}</div>",
+                unsafe_allow_html=True,
+            )
+        with c4:
+            st.markdown(
+                f"<div style='margin-top:.75rem;text-align:center;'>{mistakes[idx]}</div>",
+                unsafe_allow_html=True,
+            )
+
+    st.write("")
+    st.write("")
+    if st.button("⬅ Back to main menu", key="results_back_home"):
+        go("home")
+        st.rerun()
+
+
+# -------------------------------------------------
 # Router
 # -------------------------------------------------
 page = st.session_state.page
@@ -1129,9 +1227,13 @@ elif page == "single_setup":
     page_single_setup()
 elif page == "single_game":
     page_single_game()
+elif page == "single_results":
+    page_single_results()
 elif page == "multi_setup":
     page_multi_setup()
 elif page == "multi_game":
     page_multi_game()
+elif page == "multi_results":
+    page_multi_results()
 else:
     page_home()
