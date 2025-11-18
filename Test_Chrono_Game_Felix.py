@@ -31,7 +31,7 @@ import pandas as pd
 
 
 # -------------------------------------------------
-# Basic app config & paths
+# App config & paths
 # -------------------------------------------------
 st.set_page_config(page_title="HitStory", page_icon="🎵", layout="wide")
 APP_DIR = Path(__file__).parent
@@ -45,7 +45,7 @@ PINK = "#ff5aa3"
 TEXT = "#ffffff"
 
 # -------------------------------------------------
-# Global CSS (includes timeline styling)
+# Global CSS (including timeline styling)
 # -------------------------------------------------
 st.markdown(
     f"""
@@ -54,7 +54,6 @@ st.markdown(
       --purple:{PURPLE}; --panel:{PANEL}; --panelBorder:{PANEL_BORDER}; --pink:{PINK}; --text:{TEXT};
     }}
 
-    /* app background */
     [data-testid="stAppViewContainer"] {{
       background: var(--purple);
       color: var(--text);
@@ -69,7 +68,6 @@ st.markdown(
       display:none !important;
     }}
 
-    /* logo */
     .hero {{ text-align:center; margin: 0 0 .5rem 0; }}
     .hero img {{
       max-width: 320px;
@@ -78,7 +76,6 @@ st.markdown(
       display: block;
     }}
 
-    /* panels */
     .panel {{
       background: var(--panel);
       border: 3px solid var(--panelBorder);
@@ -97,7 +94,6 @@ st.markdown(
     .how li::marker {{ color: var(--pink); }}
     .how li {{ margin: .35rem 0; }}
 
-    /* buttons */
     .stButton>button {{
       background: linear-gradient(180deg,#ff77b4,#ff5aa3);
       color: white;
@@ -116,7 +112,7 @@ st.markdown(
     .rowgap {{ margin: .4rem 0 .6rem 0; }}
     .hint {{ opacity:.9; font-weight:600; }}
 
-    /* ----- timeline layout ----- */
+    /* Timeline layout */
     .timeline-wrapper {{
       position: relative;
       margin-top: 2.5rem;
@@ -180,20 +176,103 @@ st.markdown(
 )
 
 # -------------------------------------------------
-# Simple router + session defaults
+# Navigation state
 # -------------------------------------------------
+if "page" not in st.session_state:
+    st.session_state.page = "home"  # "home", "single_setup", "single_game", "multi_setup"
+
+
 def go(page: str):
-    st.session_state.screen = page
+    """Simple page switcher."""
+    st.session_state.page = page
 
 
+# -------------------------------------------------
+# Data model & loading
+# -------------------------------------------------
+DEFAULT_DATA_PATH = "songs_input.xlsx"
+REQUIRED_COLS = ["track_id", "track_name", "track_artist", "year", "track_url"]
+OPTIONAL_COLS = ["track_popularity", "track_cover"]
 
-if "screen" not in st.session_state:
-    st.session_state.screen = "home"
 
-if "single" not in st.session_state:
-    st.session_state.single = {"mode": "Standard", "lives": 3}
-if "multi" not in st.session_state:
-    st.session_state.multi = {"players": 2, "names": [], "mode": "Standard", "lives": 3}
+@dataclass(frozen=True)
+class Song:
+    track_id: int | str
+    track_name: str
+    track_artist: str
+    year: int
+    track_url: Optional[str] = None
+    popularity: Optional[int] = None
+    track_cover: Optional[str] = None
+
+    def label(self, show_year: bool = False) -> str:
+        base = f"{self.track_name} — {self.track_artist}"
+        return f"{base} ({self.year})" if show_year else base
+
+
+def load_songs(path: str) -> List[Song]:
+    if path.lower().endswith(".xlsx"):
+        df = pd.read_excel(path)
+    elif path.lower().endswith(".csv"):
+        df = pd.read_csv(path)
+    else:
+        raise RuntimeError("Unsupported file type. Use .xlsx or .csv")
+
+    df.columns = [c.lower() for c in df.columns]
+    missing = [c for c in REQUIRED_COLS if c not in df.columns]
+    if missing:
+        raise RuntimeError(f"Dataset missing columns: {missing}. Required: {REQUIRED_COLS}")
+
+    keep_cols = REQUIRED_COLS + [c for c in OPTIONAL_COLS if c in df.columns]
+    df = df[keep_cols].copy()
+
+    df["year"] = pd.to_numeric(df["year"], errors="coerce").astype("Int64")
+    if "track_popularity" in df.columns:
+        df["track_popularity"] = pd.to_numeric(df["track_popularity"], errors="coerce").astype("Int64")
+
+    df = df.dropna(subset=["track_name", "track_artist", "year"])
+    df["year"] = df["year"].astype(int)
+    df = df.drop_duplicates(subset=["track_id", "year"]).reset_index(drop=True)
+
+    songs: List[Song] = []
+    for row in df.itertuples(index=False):
+        songs.append(
+            Song(
+                track_id=getattr(row, "track_id"),
+                track_name=getattr(row, "track_name"),
+                track_artist=getattr(row, "track_artist"),
+                year=int(getattr(row, "year")),
+                track_url=None
+                if "track_url" not in df.columns or pd.isna(getattr(row, "track_url", None))
+                else str(getattr(row, "track_url")),
+                popularity=None
+                if "track_popularity" not in df.columns
+                or pd.isna(getattr(row, "track_popularity", None))
+                else int(getattr(row, "track_popularity")),
+                track_cover=None
+                if "track_cover" not in df.columns or pd.isna(getattr(row, "track_cover", None))
+                else str(getattr(row, "track_cover")),
+            )
+        )
+    if not songs:
+        raise RuntimeError("No valid songs found.")
+    return songs
+
+
+def filter_popular(songs: List[Song], threshold: int = 75) -> List[Song]:
+    return [s for s in songs if s.popularity is not None and s.popularity >= threshold]
+
+
+def build_pool(all_songs: List[Song], mode: str) -> List[Song]:
+    if mode in ("Popular", "Party"):
+        popular = filter_popular(all_songs, 75)
+        return popular if popular else all_songs
+    return all_songs
+
+
+def hearts(n: int, max_hearts: int) -> str:
+    return "❤️" * max(0, n) + "♡" * max(0, (max_hearts - n))
+
 
 # -------------------------------------------------
 # Common header
@@ -201,7 +280,8 @@ if "multi" not in st.session_state:
 def header_logo():
     st.markdown('<div class="hero">', unsafe_allow_html=True)
     if LOGO.exists():
-        st.image(LOGO.read_bytes(), use_column_width=False)
+        # use_container_width=True is correct for modern Streamlit
+        st.image(LOGO.read_bytes(), use_container_width=False)
     else:
         st.markdown(
             '<h1 style="font-weight:900;color:#fff;">HitStory</h1>',
@@ -209,23 +289,25 @@ def header_logo():
         )
     st.markdown("</div>", unsafe_allow_html=True)
 
+
 # -------------------------------------------------
-# HOME
+# Pages
 # -------------------------------------------------
-def screen_home():
+def page_home():
     header_logo()
     c1, c2, c3 = st.columns([1, 1, 1])
     with c2:
-        st.button("Singleplayer", use_container_width=True,
-                  on_click=lambda: go("single"))
+        if st.button("Singleplayer", use_container_width=True):
+            go("single_setup")
+        st.write("")
+        if st.button("Multiplayer", use_container_width=True):
+            go("multi_setup")
 
-        st.button("Continue ➜", use_container_width=True, type="primary",
-                  key="s_next", on_click=lambda: go("single-game"))
 
-# -------------------------------------------------
-# SINGLEPLAYER SETUP
-# -------------------------------------------------
-def screen_single():
+def page_single_setup():
+    if "single" not in st.session_state:
+        st.session_state.single = {"mode": "Standard", "lives": 3}
+
     header_logo()
     st.markdown('<div class="panel">🧍 Singleplayer!</div>', unsafe_allow_html=True)
     st.write("")
@@ -285,21 +367,158 @@ def screen_single():
         st.write("")
         mid = st.columns([1, 1, 1])[1]
         with mid:
-            st.button(
-                "Continue ➜",
-                use_container_width=True,
-                type="primary",
-                key="s_next",
-                on_click=lambda: go("single-game"),
-            )
+            if st.button("Continue ➜", use_container_width=True, type="primary", key="s_next"):
+                go("single_game")
 
     st.write("")
-    st.button("⬅ Back to Home", key="back_single", on_click=lambda: go("home"))
+    if st.button("⬅ Back to Home", key="back_single_home"):
+        go("home")
 
-# -------------------------------------------------
-# MULTIPLAYER SETUP (unchanged layout)
-# -------------------------------------------------
-def screen_multi():
+
+def init_single_game_state():
+    """Create basic game state: one current song + timeline from dataset."""
+    if "songs_all" not in st.session_state:
+        try:
+            st.session_state.songs_all = load_songs(DEFAULT_DATA_PATH)
+        except Exception as e:
+            st.error(f"Error loading songs: {e}")
+            st.stop()
+
+    all_songs = st.session_state.songs_all
+    single_cfg = st.session_state.get("single", {"mode": "Standard", "lives": 3})
+    pool = build_pool(all_songs, single_cfg.get("mode", "Standard"))
+    if not pool:
+        st.error("No songs available in the selected pool.")
+        st.stop()
+
+    current = random.choice(pool)
+    timeline_candidates = [s for s in pool if s.track_id != current.track_id]
+    k = min(8, len(timeline_candidates))
+    timeline = sorted(random.sample(timeline_candidates, k=k), key=lambda s: s.year) if k > 0 else []
+
+    st.session_state.single_game = {
+        "pool": pool,
+        "timeline": timeline,
+        "current": current,
+        "lives_max": single_cfg.get("lives", 3),
+        "lives": single_cfg.get("lives", 3),
+        "score": 0,
+    }
+
+
+def render_timeline_ui(timeline: List[Song]):
+    if not timeline:
+        st.caption("Timeline will appear here.")
+        return
+
+    html_parts = [
+        '<div class="timeline-wrapper">',
+        '<div class="timeline-line"></div>',
+        '<div class="timeline">',
+    ]
+
+    for song in timeline:
+        if song.track_cover:
+            cover_html = f'<img src="{song.track_cover}" alt="cover" />'
+        else:
+            cover_html = "Album<br/>Cover"
+
+        html_parts.append(
+            f"""
+          <div class="timeline-item">
+            <div class="timeline-cover">{cover_html}</div>
+            <div class="timeline-dot"></div>
+            <div class="timeline-year">{song.year}</div>
+          </div>
+        """
+        )
+
+    html_parts.append("</div></div>")
+    st.markdown("".join(html_parts), unsafe_allow_html=True)
+
+
+def page_single_game():
+    if "single_game" not in st.session_state:
+        init_single_game_state()
+
+    game = st.session_state.single_game
+    current: Song = game["current"]
+    timeline: List[Song] = game["timeline"]
+
+    header_logo()
+
+    # Scoreboard (top left)
+    sb_col, _ = st.columns([1.5, 3])
+    with sb_col:
+        lives_str = hearts(game["lives"], game["lives_max"])
+        st.markdown(
+            f"""
+            <div class="panel" style="text-align:left;">
+              <div style="font-size:1.4rem; line-height:1.2;">Scoreboard</div>
+              <div style="margin-top:.5rem;">Player 1 — {lives_str}</div>
+              <div>Score — <b>{game['score']}</b></div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    st.write("")
+
+    # Center: album cover + title bar
+    center = st.columns([1, 2, 1])[1]
+    with center:
+        if current.track_cover:
+            st.image(current.track_cover, use_container_width=True)
+        else:
+            st.markdown(
+                """
+                <div style="
+                  width:100%;
+                  padding-top:100%;
+                  border-radius:12px;
+                  background:linear-gradient(135deg,#ff77b4,#4978C8);
+                  display:flex;
+                  align-items:center;
+                  justify-content:center;
+                  font-size:2.5rem;
+                  font-weight:900;
+                  margin-bottom:1rem;
+                ">
+                  🎵
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        st.markdown(
+            f"""
+            <div class="panel" style="margin-top:1rem;">
+              {current.track_name} — {current.track_artist}
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        if current.track_url:
+            st.audio(current.track_url)
+
+    # Bottom: timeline
+    render_timeline_ui(timeline)
+
+    st.write("")
+    col_back, col_next = st.columns([1, 1])
+    with col_back:
+        if st.button("⬅ Back to setup", key="back_single_setup"):
+            go("single_setup")
+    with col_next:
+        if st.button("Next random song ➜"):
+            init_single_game_state()
+
+
+def page_multi_setup():
+    if "multi" not in st.session_state:
+        st.session_state.multi = {"players": 2, "names": [], "mode": "Standard", "lives": 3}
+
     header_logo()
     st.markdown('<div class="panel">👥 Multiplayer!</div>', unsafe_allow_html=True)
     st.write("")
@@ -377,264 +596,29 @@ def screen_multi():
         st.write("")
         mid = st.columns([1, 1, 1])[1]
         with mid:
-            st.button("Continue ➜", use_container_width=True, type="primary", key="m_next",
-                      on_click=lambda: go("multi-next"))
+            if st.button("Continue ➜", use_container_width=True, type="primary", key="m_next"):
+                st.info("Multiplayer gameplay page not implemented yet 🙂")
 
     st.write("")
-    st.button("⬅ Back to Home", key="back_multi", on_click=lambda: go("home"))
+    if st.button("⬅ Back to Home", key="back_multi_home"):
+        go("home")
 
-# =================================================
-# Data model + loading (reused from your game code)
-# =================================================
-DEFAULT_DATA_PATH = "songs_input.xlsx"
-REQUIRED_COLS = ["track_id", "track_name", "track_artist", "year", "track_url"]
-OPTIONAL_COLS = ["track_popularity", "track_cover"]
-
-@dataclass(frozen=True)
-class Song:
-    track_id: int | str
-    track_name: str
-    track_artist: str
-    year: int
-    track_url: Optional[str] = None
-    popularity: Optional[int] = None
-    track_cover: Optional[str] = None
-
-    def label(self, show_year: bool = False) -> str:
-        base = f"{self.track_name} — {self.track_artist}"
-        return f"{base} ({self.year})" if show_year else base
-
-
-def load_songs(path: str) -> List[Song]:
-    if path.lower().endswith(".xlsx"):
-        df = pd.read_excel(path)
-    elif path.lower().endswith(".csv"):
-        df = pd.read_csv(path)
-    else:
-        raise SystemExit("Unsupported file type. Use .xlsx or .csv")
-
-    df.columns = [c.lower() for c in df.columns]
-    missing = [c for c in REQUIRED_COLS if c not in df.columns]
-    if missing:
-        raise SystemExit(f"Dataset missing columns: {missing}. Required: {REQUIRED_COLS}")
-
-    keep_cols = REQUIRED_COLS + [c for c in OPTIONAL_COLS if c in df.columns]
-    df = df[keep_cols].copy()
-
-    df["year"] = pd.to_numeric(df["year"], errors="coerce").astype("Int64")
-    if "track_popularity" in df.columns:
-        df["track_popularity"] = pd.to_numeric(df["track_popularity"], errors="coerce").astype("Int64")
-
-    df = df.dropna(subset=["track_name", "track_artist", "year"])
-    df["year"] = df["year"].astype(int)
-    df = df.drop_duplicates(subset=["track_id", "year"]).reset_index(drop=True)
-
-    songs: List[Song] = []
-    for row in df.itertuples(index=False):
-        songs.append(
-            Song(
-                track_id=getattr(row, "track_id"),
-                track_name=getattr(row, "track_name"),
-                track_artist=getattr(row, "track_artist"),
-                year=int(getattr(row, "year")),
-                track_url=None
-                if "track_url" not in df.columns or pd.isna(getattr(row, "track_url", None))
-                else str(getattr(row, "track_url")),
-                popularity=None
-                if "track_popularity" not in df.columns
-                or pd.isna(getattr(row, "track_popularity", None))
-                else int(getattr(row, "track_popularity")),
-                track_cover=None
-                if "track_cover" not in df.columns or pd.isna(getattr(row, "track_cover", None))
-                else str(getattr(row, "track_cover")),
-            )
-        )
-    if not songs:
-        raise SystemExit("No valid songs found.")
-    return songs
-
-
-def filter_popular(songs: List[Song], threshold: int = 75) -> List[Song]:
-    return [s for s in songs if s.popularity is not None and s.popularity >= threshold]
-
-
-def build_pool(all_songs: List[Song], mode: str) -> List[Song]:
-    if mode in ("Popular", "Party"):
-        popular = filter_popular(all_songs, 75)
-        if not popular:
-            return all_songs
-        return popular
-    return all_songs
-
-
-def hearts(n: int, max_hearts: int) -> str:
-    return "❤️" * max(0, n) + "♡" * max(0, (max_hearts - n))
-
-# =================================================
-# Singleplayer GAME frontend (mockup behaviour)
-# =================================================
-def init_single_game_state():
-    """Pick one current song and 6–8 timeline songs, sorted by year."""
-    if "songs_all" not in st.session_state:
-        try:
-            st.session_state.songs_all = load_songs(DEFAULT_DATA_PATH)
-        except Exception as e:
-            st.error(f"Error loading songs: {e}")
-            st.stop()
-
-    all_songs = st.session_state.songs_all
-    mode = st.session_state.single.get("mode", "Standard")
-    pool = build_pool(all_songs, mode)
-    if not pool:
-        st.error("No songs available in the selected pool.")
-        st.stop()
-
-    current = random.choice(pool)
-    timeline_candidates = [s for s in pool if s.track_id != current.track_id]
-    k = min(8, len(timeline_candidates))
-    timeline = sorted(random.sample(timeline_candidates, k=k), key=lambda s: s.year)
-
-    st.session_state.single_game = {
-        "pool": pool,
-        "timeline": timeline,
-        "current": current,
-        "lives_max": st.session_state.single.get("lives", 3),
-        "lives":     st.session_state.single.get("lives", 3),
-        "score": 0,
-    }
-
-
-def render_timeline_ui(timeline: List[Song]):
-    if not timeline:
-        st.caption("Timeline will appear here.")
-        return
-
-    html_parts = [
-        '<div class="timeline-wrapper">',
-        '<div class="timeline-line"></div>',
-        '<div class="timeline">',
-    ]
-
-    for song in timeline:
-        if song.track_cover:
-            cover_html = f'<img src="{song.track_cover}" alt="cover" />'
-        else:
-            cover_html = "Album<br/>Cover"
-
-        html_parts.append(
-            f"""
-          <div class="timeline-item">
-            <div class="timeline-cover">{cover_html}</div>
-            <div class="timeline-dot"></div>
-            <div class="timeline-year">{song.year}</div>
-          </div>
-        """
-        )
-
-    html_parts.append("</div></div>")
-    st.markdown("".join(html_parts), unsafe_allow_html=True)
-
-
-def screen_single_game():
-    if "single_game" not in st.session_state or st.session_state.single_game is None:
-        init_single_game_state()
-
-    game = st.session_state.single_game
-    current: Song = game["current"]
-    timeline: List[Song] = game["timeline"]
-
-    header_logo()
-
-    # Scoreboard box (top left)
-    sb_col, _ = st.columns([1.5, 3])
-    with sb_col:
-        lives_str = hearts(game["lives"], game["lives_max"])
-        st.markdown(
-            f"""
-            <div class="panel" style="text-align:left;">
-              <div style="font-size:1.4rem; line-height:1.2;">Scoreboard</div>
-              <div style="margin-top:.5rem;">Player 1 — {lives_str}</div>
-              <div>Score — <b>{game['score']}</b></div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-    st.write("")
-
-    # Centered album cover + title bar
-    center = st.columns([1, 2, 1])[1]
-    with center:
-        if current.track_cover:
-            st.image(current.track_cover, use_column_width=True)
-        else:
-            st.markdown(
-                """
-                <div style="
-                  width:100%;
-                  padding-top:100%;
-                  border-radius:12px;
-                  background:linear-gradient(135deg,#ff77b4,#4978C8);
-                  display:flex;
-                  align-items:center;
-                  justify-content:center;
-                  font-size:2.5rem;
-                  font-weight:900;
-                  margin-bottom:1rem;
-                ">
-                  🎵
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
-        st.markdown(
-            f"""
-            <div class="panel" style="margin-top:1rem;">
-              {current.track_name} — {current.track_artist}
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-        if current.track_url:
-            st.audio(current.track_url)
-
-    # Bottom timeline
-    render_timeline_ui(timeline)
-
-    st.write("")
-    col_back, col_next = st.columns([1, 1])
-    with col_back:
-        st.button("⬅ Back to setup", key="back_single_game", on_click=lambda: go("single"))
-    with col_next:
-        if st.button("Next random song ➜"):
-            init_single_game_state()
-            if st.button("Next random song ➜"):
-                init_single_game_state()
-                st.rerun()
 
 # -------------------------------------------------
 # Router
 # -------------------------------------------------
-page = st.session_state.screen
+page = st.session_state.page
+
 if page == "home":
-    screen_home()
-elif page == "single":
-    screen_single()
-elif page == "multi":
-    screen_multi()
-elif page == "single-game":
-    screen_single_game()
+    page_home()
+elif page == "single_setup":
+    page_single_setup()
+elif page == "single_game":
+    page_single_game()
+elif page == "multi_setup":
+    page_multi_setup()
 else:
-    header_logo()
-    st.subheader("Next page coming…")
-    st.caption("Placeholder for future pages.")
-    st.button("⬅ Back to Home", key="back_next", on_click=lambda: go("home"))
-
-
-
-
+    page_home()
 
 
 # ---------------- Config ----------------
