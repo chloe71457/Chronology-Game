@@ -30,6 +30,9 @@ import pandas as pd
 # ------ FrontEnd -----------------------
 
 
+# -------------------------------------------------
+# Basic app config & paths
+# -------------------------------------------------
 st.set_page_config(page_title="HitStory", page_icon="🎵", layout="wide")
 APP_DIR = Path(__file__).parent
 LOGO = APP_DIR / "Logo_V1.png"
@@ -41,38 +44,41 @@ PANEL_BORDER = "#2a4d98"
 PINK = "#ff5aa3"
 TEXT = "#ffffff"
 
-# ------------------ Global CSS ------------------
+# -------------------------------------------------
+# Global CSS (includes timeline styling)
+# -------------------------------------------------
 st.markdown(
     f"""
     <style>
     :root {{
       --purple:{PURPLE}; --panel:{PANEL}; --panelBorder:{PANEL_BORDER}; --pink:{PINK}; --text:{TEXT};
     }}
+
     /* app background */
     [data-testid="stAppViewContainer"] {{
       background: var(--purple);
       color: var(--text);
     }}
-    /* fill viewport & center vertically so no scroll on normal screens */
     [data-testid="stAppViewContainer"] > .main {{
       min-height: 100vh;
       display: flex;
       flex-direction: column;
       justify-content: center;
     }}
-    /* hide default chrome */
-    [data-testid="stHeader"], [data-testid="stToolbar"], footer {{ display:none !important; }}
+    [data-testid="stHeader"], [data-testid="stToolbar"], footer {{
+      display:none !important;
+    }}
 
     /* logo */
     .hero {{ text-align:center; margin: 0 0 .5rem 0; }}
     .hero img {{
-      max-width: 320px;            /* tweak if still too big/small */
+      max-width: 320px;
       width: 48%;
       margin: 0 auto;
       display: block;
     }}
 
-    /* panel blocks */
+    /* panels */
     .panel {{
       background: var(--panel);
       border: 3px solid var(--panelBorder);
@@ -88,11 +94,10 @@ st.markdown(
       line-height: 1.55;
     }}
 
-    /* bullets pink */
     .how li::marker {{ color: var(--pink); }}
     .how li {{ margin: .35rem 0; }}
 
-    /* pink buttons */
+    /* buttons */
     .stButton>button {{
       background: linear-gradient(180deg,#ff77b4,#ff5aa3);
       color: white;
@@ -103,56 +108,123 @@ st.markdown(
       padding: .8rem 1rem;
     }}
     .stButton>button:hover {{ filter: brightness(1.05); }}
-    .stButton>button:active {{ transform: translateY(2px); box-shadow: 0 3px 0 #c23c79; }}
+    .stButton>button:active {{
+      transform: translateY(2px);
+      box-shadow: 0 3px 0 #c23c79;
+    }}
 
     .rowgap {{ margin: .4rem 0 .6rem 0; }}
     .hint {{ opacity:.9; font-weight:600; }}
+
+    /* ----- timeline layout ----- */
+    .timeline-wrapper {{
+      position: relative;
+      margin-top: 2.5rem;
+    }}
+    .timeline-line {{
+      position: absolute;
+      left: 5%;
+      right: 5%;
+      top: 50%;
+      height: 4px;
+      background: var(--pink);
+      z-index: 0;
+    }}
+    .timeline {{
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 0.5rem;
+      position: relative;
+      z-index: 1;
+    }}
+    .timeline-item {{
+      flex: 1;
+      text-align: center;
+      font-size: 0.8rem;
+    }}
+    .timeline-cover {{
+      width: 90px;
+      height: 90px;
+      margin: 0 auto 0.6rem auto;
+      border-radius: 4px;
+      background: var(--pink);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      line-height: 1.1;
+      overflow: hidden;
+    }}
+    .timeline-cover img {{
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }}
+    .timeline-dot {{
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: #e4e4e4;
+      border: 4px solid var(--pink);
+      margin: 0.3rem auto 0.15rem auto;
+    }}
+    .timeline-year {{
+      margin-top: 0.1rem;
+      font-weight: 600;
+    }}
     </style>
     """,
     unsafe_allow_html=True,
 )
 
-# ------------------ Simple router ------------------
+# -------------------------------------------------
+# Simple router + session defaults
+# -------------------------------------------------
 def go(page: str):
     st.session_state.screen = page
-    try:
-        # new Streamlit version
-        st.rerun()
-    except AttributeError:
-        # fallback for older versions
-        from streamlit.runtime.scriptrunner import RerunException
-        from streamlit.runtime.scriptrunner import rerun
-        raise RerunException(rerun)
+
+
 
 if "screen" not in st.session_state:
     st.session_state.screen = "home"
 
-# store selections for next pages
 if "single" not in st.session_state:
     st.session_state.single = {"mode": "Standard", "lives": 3}
 if "multi" not in st.session_state:
     st.session_state.multi = {"players": 2, "names": [], "mode": "Standard", "lives": 3}
 
-# ------------------ Common header ------------------
+# -------------------------------------------------
+# Common header
+# -------------------------------------------------
 def header_logo():
     st.markdown('<div class="hero">', unsafe_allow_html=True)
     if LOGO.exists():
         st.image(LOGO.read_bytes(), use_column_width=False)
     else:
-        st.markdown('<h1 style="font-weight:900;color:#fff;">HitStory</h1>', unsafe_allow_html=True)
+        st.markdown(
+            '<h1 style="font-weight:900;color:#fff;">HitStory</h1>',
+            unsafe_allow_html=True,
+        )
     st.markdown("</div>", unsafe_allow_html=True)
 
-# ------------------ HOME ------------------
+# -------------------------------------------------
+# HOME
+# -------------------------------------------------
 def screen_home():
     header_logo()
-    # centered button column
     c1, c2, c3 = st.columns([1, 1, 1])
     with c2:
-        st.button("Singleplayer", use_container_width=True, on_click=lambda: go("single"))
-        st.write("")
-        st.button("Multiplayer", use_container_width=True, on_click=lambda: go("multi"))
+        st.button("Singleplayer", use_container_width=True,
+                  on_click=lambda: go("single"))
 
-# ------------------ SINGLEPLAYER SETUP ------------------
+        st.button("Continue ➜", use_container_width=True, type="primary",
+                  key="s_next", on_click=lambda: go("single-game"))
+
+# -------------------------------------------------
+# SINGLEPLAYER SETUP
+# -------------------------------------------------
 def screen_single():
     header_logo()
     st.markdown('<div class="panel">🧍 Singleplayer!</div>', unsafe_allow_html=True)
@@ -169,7 +241,7 @@ def screen_single():
               <li>Listen to the song that is being played.</li>
               <li>A hint will be given if needed (artist & song name).</li>
               <li>Place the song correctly on the timeline according to its release year.</li>
-              <li>If you lose all 3 lives, play again!</li>
+              <li>If you lose all lives, play again!</li>
             </ul>
             """,
             unsafe_allow_html=True,
@@ -213,13 +285,20 @@ def screen_single():
         st.write("")
         mid = st.columns([1, 1, 1])[1]
         with mid:
-            st.button("Continue ➜", use_container_width=True, type="primary", key="s_next",
-                      on_click=lambda: go("single-next"))
+            st.button(
+                "Continue ➜",
+                use_container_width=True,
+                type="primary",
+                key="s_next",
+                on_click=lambda: go("single-game"),
+            )
 
     st.write("")
     st.button("⬅ Back to Home", key="back_single", on_click=lambda: go("home"))
 
-# ------------------ MULTIPLAYER SETUP ------------------
+# -------------------------------------------------
+# MULTIPLAYER SETUP (unchanged layout)
+# -------------------------------------------------
 def screen_multi():
     header_logo()
     st.markdown('<div class="panel">👥 Multiplayer!</div>', unsafe_allow_html=True)
@@ -237,7 +316,7 @@ def screen_multi():
               <li>Listen to the song that is being played.</li>
               <li>A hint will be given if needed (artist & song name).</li>
               <li>Place the song correctly on the timeline according to its release year.</li>
-              <li>If you lose all 3 lives, play again!</li>
+              <li>If you lose all lives, play again!</li>
             </ul>
             """,
             unsafe_allow_html=True,
@@ -245,13 +324,12 @@ def screen_multi():
         st.markdown("</div>", unsafe_allow_html=True)
 
     with right:
-        # Player count
         st.markdown('<div class="panel">Select number of players (2–5)</div>', unsafe_allow_html=True)
         st.markdown('<div class="rowgap"></div>', unsafe_allow_html=True)
-        st.session_state.multi["players"] = st.slider("", min_value=2, max_value=5,
-                                                      value=st.session_state.multi["players"], key="m_count")
+        st.session_state.multi["players"] = st.slider(
+            "", min_value=2, max_value=5, value=st.session_state.multi["players"], key="m_count"
+        )
 
-        # Names
         st.markdown('<div class="rowgap"></div>', unsafe_allow_html=True)
         st.markdown('<div class="panel">Input Names</div>', unsafe_allow_html=True)
         st.markdown('<div class="rowgap"></div>', unsafe_allow_html=True)
@@ -264,7 +342,6 @@ def screen_multi():
                 names.append(st.text_input(f"Player {i+1}", value=default, key=f"m_name_{i}"))
         st.session_state.multi["names"] = names
 
-        # Mode
         st.markdown('<div class="rowgap"></div>', unsafe_allow_html=True)
         st.markdown('<div class="panel">Select Game-mode</div>', unsafe_allow_html=True)
         st.markdown('<div class="rowgap"></div>', unsafe_allow_html=True)
@@ -279,7 +356,6 @@ def screen_multi():
             if st.button("🥳  Party", use_container_width=True, key="m_party"):
                 st.session_state.multi["mode"] = "Party"
 
-        # Lives
         st.markdown('<div class="rowgap"></div>', unsafe_allow_html=True)
         st.markdown('<div class="panel">Select Lives</div>', unsafe_allow_html=True)
         st.markdown('<div class="rowgap"></div>', unsafe_allow_html=True)
@@ -307,7 +383,240 @@ def screen_multi():
     st.write("")
     st.button("⬅ Back to Home", key="back_multi", on_click=lambda: go("home"))
 
-# ------------------ Router ------------------
+# =================================================
+# Data model + loading (reused from your game code)
+# =================================================
+DEFAULT_DATA_PATH = "songs_input.xlsx"
+REQUIRED_COLS = ["track_id", "track_name", "track_artist", "year", "track_url"]
+OPTIONAL_COLS = ["track_popularity", "track_cover"]
+
+@dataclass(frozen=True)
+class Song:
+    track_id: int | str
+    track_name: str
+    track_artist: str
+    year: int
+    track_url: Optional[str] = None
+    popularity: Optional[int] = None
+    track_cover: Optional[str] = None
+
+    def label(self, show_year: bool = False) -> str:
+        base = f"{self.track_name} — {self.track_artist}"
+        return f"{base} ({self.year})" if show_year else base
+
+
+def load_songs(path: str) -> List[Song]:
+    if path.lower().endswith(".xlsx"):
+        df = pd.read_excel(path)
+    elif path.lower().endswith(".csv"):
+        df = pd.read_csv(path)
+    else:
+        raise SystemExit("Unsupported file type. Use .xlsx or .csv")
+
+    df.columns = [c.lower() for c in df.columns]
+    missing = [c for c in REQUIRED_COLS if c not in df.columns]
+    if missing:
+        raise SystemExit(f"Dataset missing columns: {missing}. Required: {REQUIRED_COLS}")
+
+    keep_cols = REQUIRED_COLS + [c for c in OPTIONAL_COLS if c in df.columns]
+    df = df[keep_cols].copy()
+
+    df["year"] = pd.to_numeric(df["year"], errors="coerce").astype("Int64")
+    if "track_popularity" in df.columns:
+        df["track_popularity"] = pd.to_numeric(df["track_popularity"], errors="coerce").astype("Int64")
+
+    df = df.dropna(subset=["track_name", "track_artist", "year"])
+    df["year"] = df["year"].astype(int)
+    df = df.drop_duplicates(subset=["track_id", "year"]).reset_index(drop=True)
+
+    songs: List[Song] = []
+    for row in df.itertuples(index=False):
+        songs.append(
+            Song(
+                track_id=getattr(row, "track_id"),
+                track_name=getattr(row, "track_name"),
+                track_artist=getattr(row, "track_artist"),
+                year=int(getattr(row, "year")),
+                track_url=None
+                if "track_url" not in df.columns or pd.isna(getattr(row, "track_url", None))
+                else str(getattr(row, "track_url")),
+                popularity=None
+                if "track_popularity" not in df.columns
+                or pd.isna(getattr(row, "track_popularity", None))
+                else int(getattr(row, "track_popularity")),
+                track_cover=None
+                if "track_cover" not in df.columns or pd.isna(getattr(row, "track_cover", None))
+                else str(getattr(row, "track_cover")),
+            )
+        )
+    if not songs:
+        raise SystemExit("No valid songs found.")
+    return songs
+
+
+def filter_popular(songs: List[Song], threshold: int = 75) -> List[Song]:
+    return [s for s in songs if s.popularity is not None and s.popularity >= threshold]
+
+
+def build_pool(all_songs: List[Song], mode: str) -> List[Song]:
+    if mode in ("Popular", "Party"):
+        popular = filter_popular(all_songs, 75)
+        if not popular:
+            return all_songs
+        return popular
+    return all_songs
+
+
+def hearts(n: int, max_hearts: int) -> str:
+    return "❤️" * max(0, n) + "♡" * max(0, (max_hearts - n))
+
+# =================================================
+# Singleplayer GAME frontend (mockup behaviour)
+# =================================================
+def init_single_game_state():
+    """Pick one current song and 6–8 timeline songs, sorted by year."""
+    if "songs_all" not in st.session_state:
+        try:
+            st.session_state.songs_all = load_songs(DEFAULT_DATA_PATH)
+        except Exception as e:
+            st.error(f"Error loading songs: {e}")
+            st.stop()
+
+    all_songs = st.session_state.songs_all
+    mode = st.session_state.single.get("mode", "Standard")
+    pool = build_pool(all_songs, mode)
+    if not pool:
+        st.error("No songs available in the selected pool.")
+        st.stop()
+
+    current = random.choice(pool)
+    timeline_candidates = [s for s in pool if s.track_id != current.track_id]
+    k = min(8, len(timeline_candidates))
+    timeline = sorted(random.sample(timeline_candidates, k=k), key=lambda s: s.year)
+
+    st.session_state.single_game = {
+        "pool": pool,
+        "timeline": timeline,
+        "current": current,
+        "lives_max": st.session_state.single.get("lives", 3),
+        "lives":     st.session_state.single.get("lives", 3),
+        "score": 0,
+    }
+
+
+def render_timeline_ui(timeline: List[Song]):
+    if not timeline:
+        st.caption("Timeline will appear here.")
+        return
+
+    html_parts = [
+        '<div class="timeline-wrapper">',
+        '<div class="timeline-line"></div>',
+        '<div class="timeline">',
+    ]
+
+    for song in timeline:
+        if song.track_cover:
+            cover_html = f'<img src="{song.track_cover}" alt="cover" />'
+        else:
+            cover_html = "Album<br/>Cover"
+
+        html_parts.append(
+            f"""
+          <div class="timeline-item">
+            <div class="timeline-cover">{cover_html}</div>
+            <div class="timeline-dot"></div>
+            <div class="timeline-year">{song.year}</div>
+          </div>
+        """
+        )
+
+    html_parts.append("</div></div>")
+    st.markdown("".join(html_parts), unsafe_allow_html=True)
+
+
+def screen_single_game():
+    if "single_game" not in st.session_state or st.session_state.single_game is None:
+        init_single_game_state()
+
+    game = st.session_state.single_game
+    current: Song = game["current"]
+    timeline: List[Song] = game["timeline"]
+
+    header_logo()
+
+    # Scoreboard box (top left)
+    sb_col, _ = st.columns([1.5, 3])
+    with sb_col:
+        lives_str = hearts(game["lives"], game["lives_max"])
+        st.markdown(
+            f"""
+            <div class="panel" style="text-align:left;">
+              <div style="font-size:1.4rem; line-height:1.2;">Scoreboard</div>
+              <div style="margin-top:.5rem;">Player 1 — {lives_str}</div>
+              <div>Score — <b>{game['score']}</b></div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    st.write("")
+
+    # Centered album cover + title bar
+    center = st.columns([1, 2, 1])[1]
+    with center:
+        if current.track_cover:
+            st.image(current.track_cover, use_column_width=True)
+        else:
+            st.markdown(
+                """
+                <div style="
+                  width:100%;
+                  padding-top:100%;
+                  border-radius:12px;
+                  background:linear-gradient(135deg,#ff77b4,#4978C8);
+                  display:flex;
+                  align-items:center;
+                  justify-content:center;
+                  font-size:2.5rem;
+                  font-weight:900;
+                  margin-bottom:1rem;
+                ">
+                  🎵
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        st.markdown(
+            f"""
+            <div class="panel" style="margin-top:1rem;">
+              {current.track_name} — {current.track_artist}
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        if current.track_url:
+            st.audio(current.track_url)
+
+    # Bottom timeline
+    render_timeline_ui(timeline)
+
+    st.write("")
+    col_back, col_next = st.columns([1, 1])
+    with col_back:
+        st.button("⬅ Back to setup", key="back_single_game", on_click=lambda: go("single"))
+    with col_next:
+        if st.button("Next random song ➜"):
+            init_single_game_state()
+            if st.button("Next random song ➜"):
+                init_single_game_state()
+                st.rerun()
+
+# -------------------------------------------------
+# Router
+# -------------------------------------------------
 page = st.session_state.screen
 if page == "home":
     screen_home()
@@ -315,12 +624,17 @@ elif page == "single":
     screen_single()
 elif page == "multi":
     screen_multi()
+elif page == "single-game":
+    screen_single_game()
 else:
-    # Placeholder for next pages (actual gameplay screens)
     header_logo()
     st.subheader("Next page coming…")
-    st.caption("We’ll wire gameplay here using your backend functions next.")
+    st.caption("Placeholder for future pages.")
     st.button("⬅ Back to Home", key="back_next", on_click=lambda: go("home"))
+
+
+
+
 
 
 # ---------------- Config ----------------
