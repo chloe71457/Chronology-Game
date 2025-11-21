@@ -136,6 +136,15 @@ st.markdown(
         margin-top: 0.5rem;
         text-align: left;
     }}
+
+    /* -------------------------------------- */
+    /* NEW: Make all text input labels white */
+    /* -------------------------------------- */
+    label[data-testid="stWidgetLabel"] {{
+        color: #ffffff !important;
+        font-weight: 600 !important;
+    }}
+
     </style>
     """,
     unsafe_allow_html=True,
@@ -1012,9 +1021,9 @@ def page_multi_game():
             )
 
         sb_html = (
-                "<div class='panel' style='text-align:left;'>"
-                "<div style='font-size:1.4rem; line-height:1.2;'>Scoreboard</div>"
-                "<div style='margin-top:.5rem;'>" + "<br>".join(rows) + "</div>"
+            "<div class='panel' style='text-align:left;'>"
+            "<div style='font-size:1.4rem; line-height:1.2;'>Scoreboard</div>"
+            "<div style='margin-top:.5rem;'>" + "<br>".join(rows) + "</div>"
         )
         if party_extra:
             sb_html += f"<div style='margin-top:.5rem;font-size:.85rem;'>{party_extra}</div>"
@@ -1023,16 +1032,13 @@ def page_multi_game():
 
     st.write("")
 
-    if game["status"] == "playing":
-        st.markdown(
-            f"<div style='font-weight:700;margin-bottom:.5rem;'>Turn: {names[i_turn]}</div>",
-            unsafe_allow_html=True,
-        )
+    # --- Turn label is now inside the center block, between cover and title ---
 
     # Current challenge (center)
     center = st.columns([1, 2, 1])[1]
     with center:
         if current is not None:
+            # Cover
             if current.track_cover:
                 st.image(current.track_cover, use_container_width=True)
             else:
@@ -1056,9 +1062,27 @@ def page_multi_game():
                     unsafe_allow_html=True,
                 )
 
+            # Turn label between cover and title
+            if game["status"] == "playing":
+                st.markdown(
+                    f"""
+                    <div style="
+                        text-align:center;
+                        margin-top:0.75rem;
+                        font-weight:700;
+                        font-size:1.1rem;
+                        color:#ffffff;
+                    ">
+                        Turn: {names[i_turn]}
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+            # Title / interpret panel
             st.markdown(
                 f"""
-                <div class="panel" style="margin-top:1rem;">
+                <div class="panel" style="margin-top:0.6rem;">
                   {current.track_name} — {current.track_artist}
                 </div>
                 """,
@@ -1102,10 +1126,10 @@ def page_multi_game():
                 if p % 2 == 0:
                     slot_index = p // 2
                     if (
-                            slot_index in allowed_positions
-                            and current is not None
-                            and game["status"] == "playing"
-                            and game["lives"][i_turn] > 0
+                        slot_index in allowed_positions
+                        and current is not None
+                        and game["status"] == "playing"
+                        and game["lives"][i_turn] > 0
                     ):
                         with st.container():
                             st.markdown('<div class="slot-btn">', unsafe_allow_html=True)
