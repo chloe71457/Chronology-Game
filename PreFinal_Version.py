@@ -4,22 +4,6 @@ HitStory – Chronology (Hitster-style) Streamlit game.
 
 Singleplayer + Multiplayer with backend rules from console version.
 
-Need to add:
-- Home page
-    - Center logo
-- Settings
-    - Delete logo
-    - Change minor settings
-- Gameplay
-    - Delete logo
-    - Resize album cover of current song to be smaller
-    - Can buttons be centered
-    - Make feedback sentence on response accuracy ("Correct" / "Incorrect") in white
-    - Move "New game" button to the top right corner
-    - Put name of the new player like "[name]'s turn" above the song title name that is being guessed
-    - For party mode, make it say "[rule prompts like "Take a sip" a bigger font and center it.
-
-
 Extras:
 - Timeline capped at 12 songs (no more covers added beyond 12)
 - Automatic results pages when game ends
