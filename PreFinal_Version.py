@@ -2,12 +2,6 @@
 """
 HitStory – Chronology (Hitster-style) Streamlit game.
 
-Singleplayer + Multiplayer with backend rules from console version.
-
-Extras:
-- Timeline capped at 12 songs (no more covers added beyond 12)
-- Automatic results pages when game ends
-- Tracking of score, longest streak and mistakes
 """
 
 from __future__ import annotations
@@ -118,17 +112,13 @@ st.markdown(
       margin-top: 0.25rem;
     }}
 
-    /* -------------------------------------- */
-    /* NEW: Make feedback text always white   */
-    /* -------------------------------------- */
+ 
     .stAlert > div {{
         color: white !important;
         font-size: 1.1rem !important;
     }}
 
-    /* -------------------------------------- */
-    /* NEW: Party mode sip/chug messages     */
-    /* -------------------------------------- */
+  
     .party-msg {{
         color: white !important;
         font-size: 1.25rem !important;
@@ -137,9 +127,7 @@ st.markdown(
         text-align: left;
     }}
 
-    /* -------------------------------------- */
-    /* NEW: Make all text input labels white */
-    /* -------------------------------------- */
+  
     label[data-testid="stWidgetLabel"] {{
         color: #ffffff !important;
         font-weight: 600 !important;
