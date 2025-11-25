@@ -341,7 +341,7 @@ def page_single_setup():
     if "single" not in st.session_state:
         st.session_state.single = {"mode": "Standard", "lives": 3}
 
-    st.markdown('<div class="panel">🧍 Single Player!</div>', unsafe_allow_html=True)
+    st.markdown('<div class="panel">🧍 Single Player</div>', unsafe_allow_html=True)
     st.write("")
     left, right = st.columns([1.15, 1.3], gap="large")
 
@@ -351,13 +351,13 @@ def page_single_setup():
         st.markdown(
             """
             <div class="how">
-              <p>Play solo and test your music-timeline skills!</p>
+              <p>Play solo and test your music timeline skills!</p>
               <ol>
-                <li><strong>Pick your mode & lives:</strong> Choose Standard or Popular — and how many lives you want to start with.</li>
-                <li><strong>Listen carefully:</strong> A short clip will play each round.</li>
-                <li><strong>Place the song:</strong> Drop it where you think it belongs on the timeline.</li>
-                <li><strong>Right or wrong:</strong> Correct guesses keep you going; wrong ones cost a life.</li>
-                <li><strong>Game end:</strong> When you run out of lives, your run ends — try again to beat your <strong>longest streak</strong> and <strong>highest score</strong>!</li>
+                <li><strong>Pick Your Mode & Lives:</strong> Choose Standard or Popular — and how many lives you want to start with.</li>
+                <li><strong>Listen Carefully:</strong> A short clip will play each round.</li>
+                <li><strong>Place the Song:</strong> Drop it where you think it belongs on the timeline.</li>
+                <li><strong>Right or Wrong:</strong> Correct guesses keep you going; wrong ones cost a life.</li>
+                <li><strong>Game End:</strong> When you run out of lives, your run ends — try again to beat your <strong>longest streak</strong> and <strong>highest score</strong>!</li>
               </ol>
             </div>
             """,
@@ -367,7 +367,7 @@ def page_single_setup():
 
     with right:
         # Game mode
-        st.markdown('<div class="panel">Select Game-mode</div>', unsafe_allow_html=True)
+        st.markdown('<div class="panel">Select Game Mode</div>', unsafe_allow_html=True)
         st.markdown('<div class="rowgap"></div>', unsafe_allow_html=True)
 
         # two centered columns, no gap on right
@@ -383,17 +383,17 @@ def page_single_setup():
 
         # Lives
         st.markdown('<div class="rowgap"></div>', unsafe_allow_html=True)
-        st.markdown('<div class="panel">Select Lives</div>', unsafe_allow_html=True)
+        st.markdown('<div class="panel">Select Lives (1, 3, or 5)</div>', unsafe_allow_html=True)
         st.markdown('<div class="rowgap"></div>', unsafe_allow_html=True)
         l1, l2, l3 = st.columns(3)
         with l1:
-            if st.button("③  Standard", use_container_width=True, key="s_l3"):
+            if st.button("3️⃣  Standard", use_container_width=True, key="s_l3"):
                 st.session_state.single["lives"] = 3
         with l2:
-            if st.button("①  Hardcore", use_container_width=True, key="s_l1"):
+            if st.button("1️⃣  Hardcore", use_container_width=True, key="s_l1"):
                 st.session_state.single["lives"] = 1
         with l3:
-            if st.button("⑤  Fun", use_container_width=True, key="s_l5"):
+            if st.button("5️⃣  Fun", use_container_width=True, key="s_l5"):
                 st.session_state.single["lives"] = 5
 
         st.caption(
@@ -732,7 +732,7 @@ def page_multi_setup():
     if "multi" not in st.session_state:
         st.session_state.multi = {"players": 2, "names": [], "mode": "Standard", "lives": 3}
 
-    st.markdown('<div class="panel">👥 Multiplayer!</div>', unsafe_allow_html=True)
+    st.markdown('<div class="panel">👥 Multiplayer</div>', unsafe_allow_html=True)
     st.write("")
     left, right = st.columns([1.15, 1.3], gap="large")
 
@@ -742,23 +742,23 @@ def page_multi_setup():
         st.markdown(
             """
             <div class="how">
-              <p>Grab your friends — it's time to battle for music-timeline glory!</p>
+              <p>Grab your friends — it's time to battle for music timeline glory!</p>
               <ol>
-                <li><strong>Players & names:</strong> Choose 2–5 players and enter everyone’s name.</li>
-                <li><strong>Pick a mode & lives:</strong> Standard, Popular, or Party — plus how many lives everyone starts with.</li>
-                <li><strong>Take turns:</strong> On your turn, listen to the clip and place the song where you think it belongs on the timeline.</li>
-                <li><strong>Right or wrong:</strong> Correct = keep your streak. Wrong = lose a life and your streak resets.</li>
+                <li><strong>Players & Names:</strong> Choose 2–5 players and enter everyone’s name.</li>
+                <li><strong>Pick a Mode & Lives:</strong> Standard, Popular, or Party — plus how many lives everyone starts with.</li>
+                <li><strong>Take Turns:</strong> On your turn, listen to the clip and place the song where you think it belongs on the timeline.</li>
+                <li><strong>Right or Wrong:</strong> Correct = keep your streak. Wrong = lose a life and your streak resets.</li>
                 <li><strong>Elimination:</strong> Hit zero lives and you're out.</li>
-                <li><strong>Game end:</strong> The game continues until the last player standing loses all of their lives.</li>
+                <li><strong>Game End:</strong> The game continues until the last player standing loses all of their lives.</li>
               </ol>
 
               <hr/>
 
               <h4>Party Mode Instructions</h4>
               <ul>
-                <li><strong>Streak reward:</strong> Get 3 correct in a row and a <em>random alive player</em> must take a sip.</li>
-                <li><strong>Wrong guesses:</strong> A normal miss = take a sip. If you're off by <strong>3+ songs</strong> on the timeline, you must <em>chug</em>.</li>
-                <li><strong>Party messages:</strong> Special messages appear when a sip or chug event is triggered (e.g. “🎉 Alice hit a streak of 3! Bob takes a sip 🍻”).</li>
+                <li><strong>Streak Reward:</strong> Get 3 correct in a row and a <em>random alive player</em> must take a sip.</li>
+                <li><strong>Wrong Guesses:</strong> A normal miss = take a sip. If you're off by <strong>3+ songs</strong> on the timeline, you must <em>chug</em>.</li>
+                <li><strong>Party Messages:</strong> Special messages appear when a sip or chug event is triggered (e.g. “🎉 Alice hit a streak of 3! Bob takes a sip 🍻”).</li>
               </ul>
             </div>
             """,
@@ -767,14 +767,14 @@ def page_multi_setup():
         st.markdown("</div>", unsafe_allow_html=True)
 
     with right:
-        st.markdown('<div class="panel">Select number of players (2–5)</div>', unsafe_allow_html=True)
+        st.markdown('<div class="panel">Number of Players (2–5)</div>', unsafe_allow_html=True)
         st.markdown('<div class="rowgap"></div>', unsafe_allow_html=True)
         st.session_state.multi["players"] = st.slider(
             "", min_value=2, max_value=5, value=st.session_state.multi["players"], key="m_count"
         )
 
         st.markdown('<div class="rowgap"></div>', unsafe_allow_html=True)
-        st.markdown('<div class="panel">Input Names</div>', unsafe_allow_html=True)
+        st.markdown('<div class="panel">Enter Player Names</div>', unsafe_allow_html=True)
         st.markdown('<div class="rowgap"></div>', unsafe_allow_html=True)
         names = []
         cols = st.columns(2)
@@ -786,7 +786,7 @@ def page_multi_setup():
         st.session_state.multi["names"] = names
 
         st.markdown('<div class="rowgap"></div>', unsafe_allow_html=True)
-        st.markdown('<div class="panel">Select Game-mode</div>', unsafe_allow_html=True)
+        st.markdown('<div class="panel">Select Game Mode</div>', unsafe_allow_html=True)
         st.markdown('<div class="rowgap"></div>', unsafe_allow_html=True)
         g1, g2, g3 = st.columns(3)
         with g1:
@@ -800,17 +800,17 @@ def page_multi_setup():
                 st.session_state.multi["mode"] = "Party"
 
         st.markdown('<div class="rowgap"></div>', unsafe_allow_html=True)
-        st.markdown('<div class="panel">Select Lives</div>', unsafe_allow_html=True)
+        st.markdown('<div class="panel">Select Lives (1, 3, or 5)</div>', unsafe_allow_html=True)
         st.markdown('<div class="rowgap"></div>', unsafe_allow_html=True)
         l1, l2, l3 = st.columns(3)
         with l1:
-            if st.button("③  Standard", use_container_width=True, key="m_l3"):
+            if st.button("3️⃣  Standard", use_container_width=True, key="m_l3"):
                 st.session_state.multi["lives"] = 3
         with l2:
-            if st.button("①  Hardcore", use_container_width=True, key="m_l1"):
+            if st.button("1️⃣  Hardcore", use_container_width=True, key="m_l1"):
                 st.session_state.multi["lives"] = 1
         with l3:
-            if st.button("⑤  Fun", use_container_width=True, key="m_l5"):
+            if st.button("5️⃣  Fun", use_container_width=True, key="m_l5"):
                 st.session_state.multi["lives"] = 5
 
         st.caption(
