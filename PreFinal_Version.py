@@ -347,7 +347,7 @@ def page_single_setup():
 
     with left:
         st.markdown('<div class="panel soft">', unsafe_allow_html=True)
-        st.markdown("### How to play — Single Player", unsafe_allow_html=True)
+        st.markdown("### How to Play — Single Player", unsafe_allow_html=True)
         st.markdown(
             """
             <div class="how">
@@ -738,7 +738,7 @@ def page_multi_setup():
 
     with left:
         st.markdown('<div class="panel soft">', unsafe_allow_html=True)
-        st.markdown("### How to play — Multiplayer", unsafe_allow_html=True)
+        st.markdown("### How to Play — Multiplayer", unsafe_allow_html=True)
         st.markdown(
             """
             <div class="how">
