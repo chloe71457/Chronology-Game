@@ -2,28 +2,6 @@
 """
 HitStory – Chronology (Hitster-style) Streamlit game.
 
-Singleplayer + Multiplayer with backend rules from console version.
-
-Need to add:
-- Home page
-    - Center logo
-- Settings
-    - Delete logo
-    - Change minor settings
-- Gameplay
-    - Delete logo
-    - Resize album cover of current song to be smaller
-    - Can buttons be centered
-    - Make feedback sentence on response accuracy ("Correct" / "Incorrect") in white
-    - Move "New game" button to the top right corner
-    - Put name of the new player like "[name]'s turn" above the song title name that is being guessed
-    - For party mode, make it say "[rule prompts like "Take a sip" a bigger font and center it. 
-    
-
-Extras:
-- Timeline capped at 12 songs (no more covers added beyond 12)
-- Automatic results pages when game ends
-- Tracking of score, longest streak and mistakes
 """
 
 from __future__ import annotations
@@ -133,11 +111,32 @@ st.markdown(
       opacity: 0.9;
       margin-top: 0.25rem;
     }}
+
+
+    .stAlert > div {{
+        color: white !important;
+        font-size: 1.1rem !important;
+    }}
+
+
+    .party-msg {{
+        color: white !important;
+        font-size: 1.25rem !important;
+        font-weight: 700;
+        margin-top: 0.5rem;
+        text-align: left;
+    }}
+
+
+    label[data-testid="stWidgetLabel"] {{
+        color: #ffffff !important;
+        font-weight: 600 !important;
+    }}
+
     </style>
     """,
     unsafe_allow_html=True,
 )
-
 # -------------------------------------------------
 # Navigation state
 # -------------------------------------------------
@@ -209,19 +208,19 @@ def load_songs(path: str) -> List[Song]:
                 track_url=(
                     None
                     if "track_url" not in df.columns
-                    or pd.isna(getattr(row, "track_url", None))
+                       or pd.isna(getattr(row, "track_url", None))
                     else str(getattr(row, "track_url"))
                 ),
                 popularity=(
                     None
                     if "track_popularity" not in df.columns
-                    or pd.isna(getattr(row, "track_popularity", None))
+                       or pd.isna(getattr(row, "track_popularity", None))
                     else int(getattr(row, "track_popularity"))
                 ),
                 track_cover=(
                     None
                     if "track_cover" not in df.columns
-                    or pd.isna(getattr(row, "track_cover", None))
+                       or pd.isna(getattr(row, "track_cover", None))
                     else str(getattr(row, "track_cover"))
                 ),
             )
@@ -309,41 +308,58 @@ def header_logo():
 # -------------------------------------------------
 # Home
 # -------------------------------------------------
+
+def header_logo():
+    """Display centered logo on the page."""
+    st.write("")  # top spacing (optional)
+    c1, c2, c3 = st.columns([1, 2, 1])  # wider middle column for the logo
+    with c2:
+        st.image(LOGO, use_container_width=True)
+    st.write("")  # bottom spacing (optional)
+
+
 def page_home():
+    """Home page with centered logo and mode selection buttons."""
     header_logo()
+
+    # Center the buttons under the logo
     c1, c2, c3 = st.columns([1, 1, 1])
     with c2:
-        if st.button("Singleplayer", use_container_width=True):
+        if st.button("Single Player", use_container_width=True):
             go("single_setup")
-        st.write("")
+
+        st.write("")  # small vertical gap
+
         if st.button("Multiplayer", use_container_width=True):
             go("multi_setup")
 
 
 # -------------------------------------------------
-# Singleplayer setup & state
+# Single Player setup & state
 # -------------------------------------------------
 def page_single_setup():
     if "single" not in st.session_state:
         st.session_state.single = {"mode": "Standard", "lives": 3}
 
-    header_logo()
-    st.markdown('<div class="panel">🧍 Singleplayer!</div>', unsafe_allow_html=True)
+    st.markdown('<div class="panel">🧍 Single Player</div>', unsafe_allow_html=True)
     st.write("")
     left, right = st.columns([1.15, 1.3], gap="large")
 
     with left:
         st.markdown('<div class="panel soft">', unsafe_allow_html=True)
-        st.markdown("### How to play!", unsafe_allow_html=True)
+        st.markdown("### How to Play — Single Player", unsafe_allow_html=True)
         st.markdown(
             """
-            <ul class="how">
-              <li>Choose your game-mode & how many lives you want.</li>
-              <li>Listen to the song that is being played.</li>
-              <li>A hint will be given if needed (artist & song name).</li>
-              <li>Place the song correctly on the timeline according to its release year.</li>
-              <li>If you lose all lives, play again!</li>
-            </ul>
+            <div class="how">
+              <p>Play solo and test your music timeline skills!</p>
+              <ol>
+                <li><strong>Pick Your Mode & Lives:</strong> Choose Standard or Popular — and how many lives you want to start with.</li>
+                <li><strong>Listen Carefully:</strong> A short clip will play each round.</li>
+                <li><strong>Place the Song:</strong> Drop it where you think it belongs on the timeline.</li>
+                <li><strong>Right or Wrong:</strong> Correct guesses keep you going; wrong ones cost a life.</li>
+                <li><strong>Game End:</strong> When you run out of lives, your run ends — try again to beat your <strong>longest streak</strong> and <strong>highest score</strong>!</li>
+              </ol>
+            </div>
             """,
             unsafe_allow_html=True,
         )
@@ -351,32 +367,33 @@ def page_single_setup():
 
     with right:
         # Game mode
-        st.markdown('<div class="panel">Select Game-mode</div>', unsafe_allow_html=True)
+        st.markdown('<div class="panel">Select Game Mode</div>', unsafe_allow_html=True)
         st.markdown('<div class="rowgap"></div>', unsafe_allow_html=True)
-        g1, g2, g3 = st.columns(3)
+
+        # two centered columns, no gap on right
+        spacer, g1, g2, spacer2 = st.columns([0.5, 1, 1, 0.5])
+
         with g1:
             if st.button("🎵  Standard", use_container_width=True, key="s_std"):
                 st.session_state.single["mode"] = "Standard"
+
         with g2:
             if st.button("⭐  Popular", use_container_width=True, key="s_pop"):
                 st.session_state.single["mode"] = "Popular"
-        with g3:
-            if st.button("🥳  Party", use_container_width=True, key="s_party"):
-                st.session_state.single["mode"] = "Party"
 
         # Lives
         st.markdown('<div class="rowgap"></div>', unsafe_allow_html=True)
-        st.markdown('<div class="panel">Select Lives</div>', unsafe_allow_html=True)
+        st.markdown('<div class="panel">Select Lives (1, 3, or 5)</div>', unsafe_allow_html=True)
         st.markdown('<div class="rowgap"></div>', unsafe_allow_html=True)
         l1, l2, l3 = st.columns(3)
         with l1:
-            if st.button("③  Standard", use_container_width=True, key="s_l3"):
+            if st.button("3️⃣  Standard", use_container_width=True, key="s_l3"):
                 st.session_state.single["lives"] = 3
         with l2:
-            if st.button("①  Hardcore", use_container_width=True, key="s_l1"):
+            if st.button("1️⃣  Hardcore", use_container_width=True, key="s_l1"):
                 st.session_state.single["lives"] = 1
         with l3:
-            if st.button("⑤  Fun", use_container_width=True, key="s_l5"):
+            if st.button("5️⃣  Fun", use_container_width=True, key="s_l5"):
                 st.session_state.single["lives"] = 5
 
         st.caption(
@@ -396,7 +413,7 @@ def page_single_setup():
 
 
 def init_single_game_state():
-    """Set up singleplayer game state."""
+    """Set up Single Player game state."""
     if "songs_all" not in st.session_state:
         try:
             st.session_state.songs_all = load_songs(DEFAULT_DATA_PATH)
@@ -436,7 +453,7 @@ def init_single_game_state():
 
 
 def process_single_guess(insert_idx: int):
-    """Apply backend logic for a single guess in singleplayer."""
+    """Apply backend logic for a single guess in Single Player."""
     game = st.session_state.single_game
     if game["current"] is None or game["status"] != "playing":
         return
@@ -482,7 +499,7 @@ def process_single_guess(insert_idx: int):
 
 
 # -------------------------------------------------
-# Singleplayer game page
+# Single Player game page
 # -------------------------------------------------
 def page_single_game():
     if "single_game" not in st.session_state:
@@ -491,8 +508,6 @@ def page_single_game():
     game = st.session_state.single_game
     current: Optional[Song] = game["current"]
     timeline: List[Song] = game["timeline"]
-
-    header_logo()
 
     # Scoreboard
     sb_col, _ = st.columns([1.5, 3])
@@ -561,7 +576,7 @@ def page_single_game():
 
     # Feedback
     if game["message"]:
-        st.info(game["message"])
+        st.info(game["message"])  # CSS will force white color
 
     st.write("")
 
@@ -657,7 +672,7 @@ def page_single_game():
 
 
 # -------------------------------------------------
-# Singleplayer results page
+# Single Player results page
 # -------------------------------------------------
 def page_single_results():
     if "single_game" not in st.session_state:
@@ -717,38 +732,49 @@ def page_multi_setup():
     if "multi" not in st.session_state:
         st.session_state.multi = {"players": 2, "names": [], "mode": "Standard", "lives": 3}
 
-    header_logo()
-    st.markdown('<div class="panel">👥 Multiplayer!</div>', unsafe_allow_html=True)
+    st.markdown('<div class="panel">👥 Multiplayer</div>', unsafe_allow_html=True)
     st.write("")
     left, right = st.columns([1.15, 1.3], gap="large")
 
     with left:
         st.markdown('<div class="panel soft">', unsafe_allow_html=True)
-        st.markdown("### How to play!", unsafe_allow_html=True)
+        st.markdown("### How to Play — Multiplayer", unsafe_allow_html=True)
         st.markdown(
             """
-            <ul class="how">
-              <li>How many players? Enter all of the names.</li>
-              <li>Choose your game-mode & how many lives you want.</li>
-              <li>Listen to the song that is being played.</li>
-              <li>A hint will be given if needed (artist & song name).</li>
-              <li>Place the song correctly on the timeline according to its release year.</li>
-              <li>If you lose all lives, play again!</li>
-            </ul>
+            <div class="how">
+              <p>Grab your friends — it's time to battle for music timeline glory!</p>
+              <ol>
+                <li><strong>Players & Names:</strong> Choose 2–5 players and enter everyone’s name.</li>
+                <li><strong>Pick a Mode & Lives:</strong> Standard, Popular, or Party — plus how many lives everyone starts with.</li>
+                <li><strong>Take Turns:</strong> On your turn, listen to the clip and place the song where you think it belongs on the timeline.</li>
+                <li><strong>Right or Wrong:</strong> Correct = keep your streak. Wrong = lose a life and your streak resets.</li>
+                <li><strong>Elimination:</strong> Hit zero lives and you're out.</li>
+                <li><strong>Game End:</strong> The game continues until the last player standing loses all of their lives.</li>
+              </ol>
+
+              <hr/>
+
+              <h4>Party Mode Instructions</h4>
+              <ul>
+                <li><strong>Streak Reward:</strong> Get 3 correct in a row and a <em>random alive player</em> must take a sip.</li>
+                <li><strong>Wrong Guesses:</strong> A normal miss = take a sip. If you're off by <strong>3+ songs</strong> on the timeline, you must <em>chug</em>.</li>
+                <li><strong>Party Messages:</strong> Special messages appear when a sip or chug event is triggered (e.g. “🎉 Alice hit a streak of 3! Bob takes a sip 🍻”).</li>
+              </ul>
+            </div>
             """,
             unsafe_allow_html=True,
         )
         st.markdown("</div>", unsafe_allow_html=True)
 
     with right:
-        st.markdown('<div class="panel">Select number of players (2–5)</div>', unsafe_allow_html=True)
+        st.markdown('<div class="panel">Number of Players (2–5)</div>', unsafe_allow_html=True)
         st.markdown('<div class="rowgap"></div>', unsafe_allow_html=True)
         st.session_state.multi["players"] = st.slider(
             "", min_value=2, max_value=5, value=st.session_state.multi["players"], key="m_count"
         )
 
         st.markdown('<div class="rowgap"></div>', unsafe_allow_html=True)
-        st.markdown('<div class="panel">Input Names</div>', unsafe_allow_html=True)
+        st.markdown('<div class="panel">Enter Player Names</div>', unsafe_allow_html=True)
         st.markdown('<div class="rowgap"></div>', unsafe_allow_html=True)
         names = []
         cols = st.columns(2)
@@ -756,11 +782,11 @@ def page_multi_setup():
             col = cols[i % 2]
             with col:
                 default = st.session_state.multi["names"][i] if i < len(st.session_state.multi["names"]) else ""
-                names.append(st.text_input(f"Player {i+1}", value=default, key=f"m_name_{i}"))
+                names.append(st.text_input(f"Player {i + 1}", value=default, key=f"m_name_{i}"))
         st.session_state.multi["names"] = names
 
         st.markdown('<div class="rowgap"></div>', unsafe_allow_html=True)
-        st.markdown('<div class="panel">Select Game-mode</div>', unsafe_allow_html=True)
+        st.markdown('<div class="panel">Select Game Mode</div>', unsafe_allow_html=True)
         st.markdown('<div class="rowgap"></div>', unsafe_allow_html=True)
         g1, g2, g3 = st.columns(3)
         with g1:
@@ -774,17 +800,17 @@ def page_multi_setup():
                 st.session_state.multi["mode"] = "Party"
 
         st.markdown('<div class="rowgap"></div>', unsafe_allow_html=True)
-        st.markdown('<div class="panel">Select Lives</div>', unsafe_allow_html=True)
+        st.markdown('<div class="panel">Select Lives (1, 3, or 5)</div>', unsafe_allow_html=True)
         st.markdown('<div class="rowgap"></div>', unsafe_allow_html=True)
         l1, l2, l3 = st.columns(3)
         with l1:
-            if st.button("③  Standard", use_container_width=True, key="m_l3"):
+            if st.button("3️⃣  Standard", use_container_width=True, key="m_l3"):
                 st.session_state.multi["lives"] = 3
         with l2:
-            if st.button("①  Hardcore", use_container_width=True, key="m_l1"):
+            if st.button("1️⃣  Hardcore", use_container_width=True, key="m_l1"):
                 st.session_state.multi["lives"] = 1
         with l3:
-            if st.button("⑤  Fun", use_container_width=True, key="m_l5"):
+            if st.button("5️⃣  Fun", use_container_width=True, key="m_l5"):
                 st.session_state.multi["lives"] = 5
 
         st.caption(
@@ -830,7 +856,7 @@ def init_multi_game_state():
     for i in range(n_players):
         name = raw_names[i].strip() if i < len(raw_names) and raw_names[i] else ""
         if not name:
-            name = f"Player {i+1}"
+            name = f"Player {i + 1}"
         names.append(name)
 
     random.seed()
@@ -963,8 +989,6 @@ def page_multi_game():
     mode: str = game["mode"]
     i_turn: int = game["current_idx"]
 
-    header_logo()
-
     # Scoreboard panel with all players
     sb_col, _ = st.columns([2, 3])
     with sb_col:
@@ -985,9 +1009,9 @@ def page_multi_game():
             )
 
         sb_html = (
-            "<div class='panel' style='text-align:left;'>"
-            "<div style='font-size:1.4rem; line-height:1.2;'>Scoreboard</div>"
-            "<div style='margin-top:.5rem;'>" + "<br>".join(rows) + "</div>"
+                "<div class='panel' style='text-align:left;'>"
+                "<div style='font-size:1.4rem; line-height:1.2;'>Scoreboard</div>"
+                "<div style='margin-top:.5rem;'>" + "<br>".join(rows) + "</div>"
         )
         if party_extra:
             sb_html += f"<div style='margin-top:.5rem;font-size:.85rem;'>{party_extra}</div>"
@@ -996,16 +1020,13 @@ def page_multi_game():
 
     st.write("")
 
-    if game["status"] == "playing":
-        st.markdown(
-            f"<div style='font-weight:700;margin-bottom:.5rem;'>Turn: {names[i_turn]}</div>",
-            unsafe_allow_html=True,
-        )
+    # --- Turn label is now inside the center block, between cover and title ---
 
     # Current challenge (center)
     center = st.columns([1, 2, 1])[1]
     with center:
         if current is not None:
+            # Cover
             if current.track_cover:
                 st.image(current.track_cover, use_container_width=True)
             else:
@@ -1029,9 +1050,27 @@ def page_multi_game():
                     unsafe_allow_html=True,
                 )
 
+            # Turn label between cover and title
+            if game["status"] == "playing":
+                st.markdown(
+                    f"""
+                    <div style="
+                        text-align:center;
+                        margin-top:0.75rem;
+                        font-weight:700;
+                        font-size:1.1rem;
+                        color:#ffffff;
+                    ">
+                        Turn: {names[i_turn]}
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+            # Title / interpret panel
             st.markdown(
                 f"""
-                <div class="panel" style="margin-top:1rem;">
+                <div class="panel" style="margin-top:0.6rem;">
                   {current.track_name} — {current.track_artist}
                 </div>
                 """,
@@ -1052,9 +1091,13 @@ def page_multi_game():
 
     # Feedback + party message
     if game["message"]:
-        st.info(game["message"])
+        st.info(game["message"])  # CSS now forces white
+
     if game.get("party_message"):
-        st.caption(game["party_message"])
+        st.markdown(
+            f"<div class='party-msg'>{game['party_message']}</div>",
+            unsafe_allow_html=True
+        )
 
     st.write("")
 
@@ -1071,10 +1114,10 @@ def page_multi_game():
                 if p % 2 == 0:
                     slot_index = p // 2
                     if (
-                        slot_index in allowed_positions
-                        and current is not None
-                        and game["status"] == "playing"
-                        and game["lives"][i_turn] > 0
+                            slot_index in allowed_positions
+                            and current is not None
+                            and game["status"] == "playing"
+                            and game["lives"][i_turn] > 0
                     ):
                         with st.container():
                             st.markdown('<div class="slot-btn">', unsafe_allow_html=True)
@@ -1253,3 +1296,5 @@ elif page == "multi_results":
     page_multi_results()
 else:
     page_home()
+
+
