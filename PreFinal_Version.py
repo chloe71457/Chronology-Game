@@ -325,7 +325,7 @@ def page_home():
     # Center the buttons under the logo
     c1, c2, c3 = st.columns([1, 1, 1])
     with c2:
-        if st.button("Singleplayer", use_container_width=True):
+        if st.button("Single Player", use_container_width=True):
             go("single_setup")
 
         st.write("")  # small vertical gap
@@ -335,19 +335,19 @@ def page_home():
 
 
 # -------------------------------------------------
-# Singleplayer setup & state
+# Single Player setup & state
 # -------------------------------------------------
 def page_single_setup():
     if "single" not in st.session_state:
         st.session_state.single = {"mode": "Standard", "lives": 3}
 
-    st.markdown('<div class="panel">🧍 Singleplayer!</div>', unsafe_allow_html=True)
+    st.markdown('<div class="panel">🧍 Single Player!</div>', unsafe_allow_html=True)
     st.write("")
     left, right = st.columns([1.15, 1.3], gap="large")
 
     with left:
         st.markdown('<div class="panel soft">', unsafe_allow_html=True)
-        st.markdown("### How to play — Singleplayer", unsafe_allow_html=True)
+        st.markdown("### How to play — Single Player", unsafe_allow_html=True)
         st.markdown(
             """
             <div class="how">
@@ -413,7 +413,7 @@ def page_single_setup():
 
 
 def init_single_game_state():
-    """Set up singleplayer game state."""
+    """Set up Single Player game state."""
     if "songs_all" not in st.session_state:
         try:
             st.session_state.songs_all = load_songs(DEFAULT_DATA_PATH)
@@ -453,7 +453,7 @@ def init_single_game_state():
 
 
 def process_single_guess(insert_idx: int):
-    """Apply backend logic for a single guess in singleplayer."""
+    """Apply backend logic for a single guess in Single Player."""
     game = st.session_state.single_game
     if game["current"] is None or game["status"] != "playing":
         return
@@ -499,7 +499,7 @@ def process_single_guess(insert_idx: int):
 
 
 # -------------------------------------------------
-# Singleplayer game page
+# Single Player game page
 # -------------------------------------------------
 def page_single_game():
     if "single_game" not in st.session_state:
@@ -672,7 +672,7 @@ def page_single_game():
 
 
 # -------------------------------------------------
-# Singleplayer results page
+# Single Player results page
 # -------------------------------------------------
 def page_single_results():
     if "single_game" not in st.session_state:
