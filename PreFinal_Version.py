@@ -772,6 +772,10 @@ def page_multi_setup():
         st.session_state.multi["players"] = st.slider(
             "", min_value=2, max_value=5, value=st.session_state.multi["players"], key="m_count"
         )
+        st.markdown(
+            f"<div style='color:var(--text); font-weight:700; margin-top:0.35rem;'>Players selected: {st.session_state.multi['players']}</div>",
+            unsafe_allow_html=True,
+        )
 
         st.markdown('<div class="rowgap"></div>', unsafe_allow_html=True)
         st.markdown('<div class="panel">Input Names</div>', unsafe_allow_html=True)
